@@ -7,7 +7,10 @@
 #include "MyCharacter.generated.h"
 
 class UBoxComponent;
+class UArrowComponent;
+class UCharacterEquipmentComponent;
 class UStaticMeshComponent;
+class UZoneDamageReceiverComponent;
 
 UCLASS()
 class PLAYWORLD_API AMyCharacter : public ACharacter
@@ -27,17 +30,47 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool IsAlive() const { return bIsAlive; }
 
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	float GetCurrentHP() const { return CurrentHP; }
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	float GetMaxHP() const { return MaxHP; }
+
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SetMoveInput(float MoveX, float MoveY);
 
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SetExternalMovementEnabled(bool bEnabled);
 
+	UFUNCTION(BlueprintCallable, Category = "Equipment")
+	void ApplyAttackRangeBonus(float BonusAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Equipment")
+	void ApplyAttackPowerBonus(float BonusAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Equipment")
+	void ApplyMoveSpeedBonus(float BonusAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "BattleRoyale")
+	void ApplyZoneDamage(float DamagePerSecond, float DeltaTime);
+
+	UCharacterEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
+	UZoneDamageReceiverComponent* GetZoneDamageReceiverComponent() const { return ZoneDamageReceiverComponent; }
+
 protected:
 	virtual void BeginPlay() override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visual")
+	TObjectPtr<UArrowComponent> ForwardArrow;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visual")
 	TObjectPtr<UStaticMeshComponent> BodyMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	TObjectPtr<UCharacterEquipmentComponent> EquipmentComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleRoyale")
+	TObjectPtr<UZoneDamageReceiverComponent> ZoneDamageReceiverComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UBoxComponent> AttackBox;

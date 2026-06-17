@@ -4,8 +4,10 @@
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Json.h"
+#include "WebSocketsModule.h"
 #include "MyCharacter.h"
 #include "Misc/DateTime.h"
+#include "ShowdownBattleRoyaleSubsystem.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -24,20 +26,59 @@ void AControllerInputPollingBridge::BeginPlay()
 
 	if (UWorld* World = GetWorld())
 	{
+		if (UShowdownBattleRoyaleSubsystem* BattleRoyaleSubsystem = GetBattleRoyaleSubsystem())
+		{
+			BattleRoyaleSubsystem->ConfigureBattleRoyale(BattleRoyaleSettings);
+		}
+
+		// Initialize WebSocket Connection
+		FWebSocketsModule& WebSocketsModule = FWebSocketsModule::Get();
+		FString BaseWsUrl = ServerBaseUrl;
+		BaseWsUrl.ReplaceInline(TEXT("http://"), TEXT("ws://"));
+		BaseWsUrl.ReplaceInline(TEXT("https://"), TEXT("wss://"));
+		BaseWsUrl.RemoveFromEnd(TEXT("/"));
+
+		UnrealWebSocket = WebSocketsModule.CreateWebSocket(FString::Printf(TEXT("%s/ws/unreal"), *BaseWsUrl), TEXT("ws"));
+
+		UnrealWebSocket->OnConnected().AddLambda([this]()
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Unreal WS] Connected to backend WebSocket."));
+		});
+
+		UnrealWebSocket->OnConnectionError().AddLambda([](const FString& Error)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[Unreal WS] Connection Error: %s"), *Error);
+		});
+
+		UnrealWebSocket->OnClosed().AddLambda([](int32 StatusCode, const FString& Reason, bool bWasClean)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[Unreal WS] Connection Closed: %s"), *Reason);
+		});
+
+		UnrealWebSocket->OnMessage().AddUObject(this, &AControllerInputPollingBridge::HandleWebSocketMessage);
+
+		UnrealWebSocket->Connect();
+
+		// Keep only the World State Sync Timer (sends Unreal character states to server)
 		World->GetTimerManager().SetTimer(
-			PollingTimerHandle,
+			WorldStateSyncTimerHandle,
 			this,
-			&AControllerInputPollingBridge::PollInputs,
-			PollingInterval,
+			&AControllerInputPollingBridge::SendWorldState,
+			WorldStateSyncInterval,
 			true);
 	}
 }
 
 void AControllerInputPollingBridge::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UnrealWebSocket.IsValid() && UnrealWebSocket->IsConnected())
+	{
+		UnrealWebSocket->Close();
+	}
+
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(PollingTimerHandle);
+		World->GetTimerManager().ClearTimer(WorldStateSyncTimerHandle);
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -93,6 +134,153 @@ void AControllerInputPollingBridge::PollInputs()
 	{
 		bRequestInFlight = false;
 		StopDemoCharacters();
+	}
+}
+
+void AControllerInputPollingBridge::PollStatus()
+{
+	if (bStatusRequestInFlight)
+	{
+		return;
+	}
+
+	FString BaseUrl = ServerBaseUrl;
+	BaseUrl.RemoveFromEnd(TEXT("/"));
+
+	const auto Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(FString::Printf(TEXT("%s/api/status"), *BaseUrl));
+	Request->SetVerb(TEXT("GET"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->OnProcessRequestComplete().BindUObject(this, &AControllerInputPollingBridge::HandleStatusResponse);
+
+	bStatusRequestInFlight = true;
+	if (!Request->ProcessRequest())
+	{
+		bStatusRequestInFlight = false;
+	}
+}
+
+void AControllerInputPollingBridge::SendWorldState()
+{
+	if (!UnrealWebSocket.IsValid() || !UnrealWebSocket->IsConnected())
+	{
+		return;
+	}
+
+	TArray<TSharedPtr<FJsonValue>> PlayerSnapshots;
+	const auto AddCharacterSnapshot = [&PlayerSnapshots](const FString& PlayerId, AMyCharacter* Character)
+	{
+		if (PlayerId.IsEmpty() || !Character)
+		{
+			return;
+		}
+
+		const FVector Location = Character->GetActorLocation();
+		const TSharedRef<FJsonObject> Snapshot = MakeShared<FJsonObject>();
+		Snapshot->SetStringField(TEXT("playerId"), PlayerId);
+		Snapshot->SetNumberField(TEXT("worldX"), Location.X);
+		Snapshot->SetNumberField(TEXT("worldY"), Location.Y);
+		Snapshot->SetNumberField(TEXT("hp"), Character->GetCurrentHP());
+		Snapshot->SetNumberField(TEXT("maxHp"), Character->GetMaxHP());
+		Snapshot->SetBoolField(TEXT("alive"), Character->IsAlive());
+		PlayerSnapshots.Add(MakeShared<FJsonValueObject>(Snapshot));
+	};
+
+	for (const TPair<FString, TObjectPtr<AMyCharacter>>& PlayerPair : PlayerCharactersById)
+	{
+		AddCharacterSnapshot(PlayerPair.Key, PlayerPair.Value);
+	}
+
+	for (const TPair<FString, TObjectPtr<AMyCharacter>>& BotPair : BotCharactersById)
+	{
+		AddCharacterSnapshot(BotPair.Key, BotPair.Value);
+	}
+
+	if (PlayerSnapshots.Num() == 0)
+	{
+		return;
+	}
+
+	const TSharedRef<FJsonObject> RootObject = MakeShared<FJsonObject>();
+	RootObject->SetStringField(TEXT("type"), TEXT("worldState"));
+	RootObject->SetArrayField(TEXT("players"), PlayerSnapshots);
+	RootObject->SetNumberField(TEXT("timestamp"), FDateTime::UtcNow().ToUnixTimestamp() * 1000.0);
+
+	FString Body;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
+	if (FJsonSerializer::Serialize(RootObject, Writer))
+	{
+		UnrealWebSocket->Send(Body);
+	}
+}
+
+void AControllerInputPollingBridge::HandleStatusResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
+{
+	bStatusRequestInFlight = false;
+
+	if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
+	{
+		return;
+	}
+
+	TSharedPtr<FJsonObject> RootObject;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Response->GetContentAsString());
+	if (!FJsonSerializer::Deserialize(Reader, RootObject) || !RootObject.IsValid())
+	{
+		return;
+	}
+
+	FString GameState;
+	if (!RootObject->TryGetStringField(TEXT("gameState"), GameState))
+	{
+		return;
+	}
+
+	// Cache initial spawn percentages from server players list
+	const TArray<TSharedPtr<FJsonValue>>* PlayersArray = nullptr;
+	if (RootObject->TryGetArrayField(TEXT("players"), PlayersArray) && PlayersArray)
+	{
+		for (const TSharedPtr<FJsonValue>& PlayerValue : *PlayersArray)
+		{
+			const TSharedPtr<FJsonObject> PlayerObject = PlayerValue.IsValid() ? PlayerValue->AsObject() : nullptr;
+			if (PlayerObject.IsValid())
+			{
+				FString PlayerId;
+				double PosX = 50.0;
+				double PosY = 50.0;
+				if (PlayerObject->TryGetStringField(TEXT("playerId"), PlayerId))
+				{
+					PlayerObject->TryGetNumberField(TEXT("posX"), PosX);
+					PlayerObject->TryGetNumberField(TEXT("posY"), PosY);
+					PlayerInitialPercentageMap.FindOrAdd(PlayerId) = FVector2D(PosX, PosY);
+				}
+			}
+		}
+	}
+
+	if (UShowdownBattleRoyaleSubsystem* BattleRoyaleSubsystem = GetBattleRoyaleSubsystem())
+	{
+		if (GameState.Equals(TEXT("Playing"), ESearchCase::IgnoreCase))
+		{
+			BattleRoyaleSubsystem->StartBattleRoyale();
+		}
+		else
+		{
+			BattleRoyaleSubsystem->ResetBattleRoyale();
+		}
+	}
+}
+
+void AControllerInputPollingBridge::HandleWorldStateResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful)
+{
+	bWorldStateRequestInFlight = false;
+
+	if (bLogPollingDebug && (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300))
+	{
+		const int32 ResponseCode = Response.IsValid() ? Response->GetResponseCode() : 0;
+		UE_LOG(LogTemp, Warning, TEXT("ControllerInputPollingBridge world-state sync failed. Success=%s ResponseCode=%d"),
+			bWasSuccessful ? TEXT("true") : TEXT("false"),
+			ResponseCode);
 	}
 }
 
@@ -340,7 +528,18 @@ AMyCharacter* AControllerInputPollingBridge::GetOrCreatePlayerCharacter(const FS
 
 	if (!PlayerCharacter)
 	{
-		PlayerCharacter = SpawnCharacterAt(GetPlayerSpawnLocation(PlayerIndex), FRotator::ZeroRotator, TEXT("DemoPlayer"));
+		FVector SpawnLoc;
+		if (FVector2D* InitialPercent = PlayerInitialPercentageMap.Find(PlayerId))
+		{
+			float WorldY = (InitialPercent->X / 100.0f) * 6000.0f - 3000.0f;
+			float WorldX = ((100.0f - InitialPercent->Y) / 100.0f) * 6000.0f - 3000.0f;
+			SpawnLoc = FVector(WorldX, WorldY, 0.0f);
+		}
+		else
+		{
+			SpawnLoc = GetPlayerSpawnLocation(PlayerIndex);
+		}
+		PlayerCharacter = SpawnCharacterAt(SpawnLoc, FRotator::ZeroRotator, TEXT("DemoPlayer"));
 	}
 
 	if (PlayerCharacter)
@@ -349,6 +548,10 @@ AMyCharacter* AControllerInputPollingBridge::GetOrCreatePlayerCharacter(const FS
 		PlayerCharacter->SetMoveInput(0.0f, 0.0f);
 		DemoPlayerCharacters.AddUnique(PlayerCharacter);
 		PlayerCharactersById.Add(PlayerId, PlayerCharacter);
+		if (UShowdownBattleRoyaleSubsystem* BattleRoyaleSubsystem = GetBattleRoyaleSubsystem())
+		{
+			BattleRoyaleSubsystem->RegisterPlayerCharacter(PlayerId, PlayerCharacter);
+		}
 		UE_LOG(LogTemp, Log, TEXT("Mapped sample player %s to %s."), *PlayerId, *PlayerCharacter->GetName());
 	}
 
@@ -368,26 +571,41 @@ AMyCharacter* AControllerInputPollingBridge::GetOrCreateBotCharacter(const FStri
 		return nullptr;
 	}
 
-	FRandomStream RandomStream;
-	RandomStream.Initialize(GetTypeHash(BotId) ^ GetTypeHash(GetActorLocation()) ^ FMath::Rand());
-
-	TArray<FVector> ExistingBotLocations;
-	ExistingBotLocations.Reserve(DemoBotCharacters.Num());
-	for (const TObjectPtr<AMyCharacter>& DemoBotCharacter : DemoBotCharacters)
+	FVector SpawnLoc;
+	if (FVector2D* InitialPercent = PlayerInitialPercentageMap.Find(BotId))
 	{
-		if (DemoBotCharacter.Get())
+		float WorldY = (InitialPercent->X / 100.0f) * 6000.0f - 3000.0f;
+		float WorldX = ((100.0f - InitialPercent->Y) / 100.0f) * 6000.0f - 3000.0f;
+		SpawnLoc = FVector(WorldX, WorldY, 0.0f);
+	}
+	else
+	{
+		FRandomStream RandomStream;
+		RandomStream.Initialize(GetTypeHash(BotId) ^ GetTypeHash(GetActorLocation()) ^ FMath::Rand());
+
+		TArray<FVector> ExistingBotLocations;
+		ExistingBotLocations.Reserve(DemoBotCharacters.Num());
+		for (const TObjectPtr<AMyCharacter>& DemoBotCharacter : DemoBotCharacters)
 		{
-			ExistingBotLocations.Add(DemoBotCharacter->GetActorLocation());
+			if (DemoBotCharacter.Get())
+			{
+				ExistingBotLocations.Add(DemoBotCharacter->GetActorLocation());
+			}
 		}
+		SpawnLoc = GetRandomBotSpawnLocation(RandomStream, ExistingBotLocations);
 	}
 
-	AMyCharacter* BotCharacter = SpawnCharacterAt(GetRandomBotSpawnLocation(RandomStream, ExistingBotLocations), FRotator::ZeroRotator, TEXT("WebBot"));
+	AMyCharacter* BotCharacter = SpawnCharacterAt(SpawnLoc, FRotator::ZeroRotator, TEXT("WebBot"));
 	if (BotCharacter)
 	{
 		BotCharacter->SetExternalMovementEnabled(true);
 		BotCharacter->SetMoveInput(0.0f, 0.0f);
 		DemoBotCharacters.AddUnique(BotCharacter);
 		BotCharactersById.Add(BotId, BotCharacter);
+		if (UShowdownBattleRoyaleSubsystem* BattleRoyaleSubsystem = GetBattleRoyaleSubsystem())
+		{
+			BattleRoyaleSubsystem->RegisterBotCharacter(BotId, BotCharacter);
+		}
 		UE_LOG(LogTemp, Log, TEXT("Mapped sample bot %s to %s."), *BotId, *BotCharacter->GetName());
 	}
 
@@ -472,4 +690,137 @@ bool AControllerInputPollingBridge::IsFarEnoughFromExistingBots(const FVector& C
 	}
 
 	return true;
+}
+
+UShowdownBattleRoyaleSubsystem* AControllerInputPollingBridge::GetBattleRoyaleSubsystem() const
+{
+	UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<UShowdownBattleRoyaleSubsystem>() : nullptr;
+}
+
+void AControllerInputPollingBridge::HandleWebSocketMessage(const FString& MessageString)
+{
+	TSharedPtr<FJsonObject> RootObject;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(MessageString);
+	if (!FJsonSerializer::Deserialize(Reader, RootObject) || !RootObject.IsValid())
+	{
+		return;
+	}
+
+	FString MsgType;
+	if (!RootObject->TryGetStringField(TEXT("type"), MsgType))
+	{
+		return;
+	}
+
+	if (MsgType.Equals(TEXT("inputsUpdated"), ESearchCase::IgnoreCase))
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Inputs = nullptr;
+		if (!RootObject->TryGetArrayField(TEXT("inputs"), Inputs) || !Inputs || Inputs->Num() == 0)
+		{
+			return;
+		}
+
+		TSet<FString> SeenPlayerIds;
+		TSet<FString> SeenBotIds;
+		int32 AppliedPlayerCount = 0;
+		int32 AppliedBotCount = 0;
+
+		for (const TSharedPtr<FJsonValue>& InputValue : *Inputs)
+		{
+			if (AppliedPlayerCount >= MaxDemoPlayers && AppliedBotCount >= MaxDemoBots)
+			{
+				break;
+			}
+
+			const TSharedPtr<FJsonObject> InputObject = InputValue.IsValid() ? InputValue->AsObject() : nullptr;
+			if (!InputObject.IsValid())
+			{
+				continue;
+			}
+
+			FString PlayerId;
+			InputObject->TryGetStringField(TEXT("playerId"), PlayerId);
+			if (PlayerId.IsEmpty())
+			{
+				continue;
+			}
+
+			double MoveX = 0.0;
+			double MoveY = 0.0;
+			if (InputObject->TryGetNumberField(TEXT("moveX"), MoveX) && InputObject->TryGetNumberField(TEXT("moveY"), MoveY))
+			{
+				if (PlayerId.StartsWith(TEXT("bot_")))
+				{
+					if (AppliedBotCount >= MaxDemoBots)
+					{
+						continue;
+					}
+					ApplyBotMoveInput(PlayerId, static_cast<float>(MoveX), static_cast<float>(MoveY));
+					SeenBotIds.Add(PlayerId);
+					++AppliedBotCount;
+				}
+				else
+				{
+					if (AppliedPlayerCount >= MaxDemoPlayers)
+					{
+						continue;
+					}
+					ApplyMoveInput(PlayerId, static_cast<float>(MoveX), static_cast<float>(MoveY));
+					SeenPlayerIds.Add(PlayerId);
+					++AppliedPlayerCount;
+				}
+			}
+		}
+	}
+	else if (MsgType.Equals(TEXT("gameStateChanged"), ESearchCase::IgnoreCase))
+	{
+		FString GameState;
+		if (RootObject->TryGetStringField(TEXT("gameState"), GameState))
+		{
+			// Cache initial spawn percentages from server players list
+			const TArray<TSharedPtr<FJsonValue>>* PlayersArray = nullptr;
+			if (RootObject->TryGetArrayField(TEXT("players"), PlayersArray) && PlayersArray)
+			{
+				for (const TSharedPtr<FJsonValue>& PlayerValue : *PlayersArray)
+				{
+					const TSharedPtr<FJsonObject> PlayerObject = PlayerValue.IsValid() ? PlayerValue->AsObject() : nullptr;
+					if (PlayerObject.IsValid())
+					{
+						FString PlayerId;
+						double PosX = 50.0;
+						double PosY = 50.0;
+						if (PlayerObject->TryGetStringField(TEXT("playerId"), PlayerId))
+						{
+							PlayerObject->TryGetNumberField(TEXT("posX"), PosX);
+							PlayerObject->TryGetNumberField(TEXT("posY"), PosY);
+							PlayerInitialPercentageMap.FindOrAdd(PlayerId) = FVector2D(PosX, PosY);
+
+							// Spawn characters/bots if not already created when receiving status update
+							if (PlayerId.StartsWith(TEXT("bot_")))
+							{
+								GetOrCreateBotCharacter(PlayerId);
+							}
+							else
+							{
+								GetOrCreatePlayerCharacter(PlayerId);
+							}
+						}
+					}
+				}
+			}
+
+			if (UShowdownBattleRoyaleSubsystem* BattleRoyaleSubsystem = GetBattleRoyaleSubsystem())
+			{
+				if (GameState.Equals(TEXT("Playing"), ESearchCase::IgnoreCase))
+				{
+					BattleRoyaleSubsystem->StartBattleRoyale();
+				}
+				else
+				{
+					BattleRoyaleSubsystem->ResetBattleRoyale();
+				}
+			}
+		}
+	}
 }

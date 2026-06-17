@@ -3,6 +3,7 @@
 #include "MyCharacter.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/ArrowComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -14,6 +15,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
+#include "CharacterEquipmentComponent.h"
+#include "ZoneDamageReceiverComponent.h"
 
 AMyCharacter::AMyCharacter()
 {
@@ -24,6 +27,13 @@ AMyCharacter::AMyCharacter()
 
 	GetMesh()->SetVisibility(false);
 	GetMesh()->SetHiddenInGame(true);
+
+	ForwardArrow = CreateDefaultSubobject<UArrowComponent>(TEXT("ForwardArrow"));
+	ForwardArrow->SetupAttachment(GetRootComponent());
+	ForwardArrow->SetRelativeLocation(FVector(80.0f, 0.0f, 80.0f));
+	ForwardArrow->SetArrowSize(1.5f);
+	ForwardArrow->ArrowColor = FColor::Green;
+	ForwardArrow->SetHiddenInGame(false);
 
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	BodyMesh->SetupAttachment(GetRootComponent());
@@ -66,7 +76,12 @@ AMyCharacter::AMyCharacter()
 		WeaponMesh->SetStaticMesh(CubeMesh.Object);
 	}
 
-	GetCharacterMovement()->bOrientRotationToMovement = false;
+	EquipmentComponent = CreateDefaultSubobject<UCharacterEquipmentComponent>(TEXT("EquipmentComponent"));
+	ZoneDamageReceiverComponent = CreateDefaultSubobject<UZoneDamageReceiverComponent>(TEXT("ZoneDamageReceiverComponent"));
+
+	bUseControllerRotationYaw = false;
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	GetCharacterMovement()->bRunPhysicsWithNoController = true;
 
 	UpdateAttackBoxTransform();
@@ -148,6 +163,34 @@ void AMyCharacter::SetExternalMovementEnabled(bool bEnabled)
 		MovementComponent->bRunPhysicsWithNoController = bEnabled;
 		MovementComponent->Activate(true);
 	}
+}
+
+void AMyCharacter::ApplyAttackRangeBonus(float BonusAmount)
+{
+	AttackBoxForwardOffset += BonusAmount;
+	AttackBoxExtent.X += BonusAmount * 0.5f;
+	UpdateAttackBoxTransform();
+	UE_LOG(LogTemp, Log, TEXT("%s gained attack range +%.1f."), *GetName(), BonusAmount);
+}
+
+void AMyCharacter::ApplyAttackPowerBonus(float BonusAmount)
+{
+	AttackPower += BonusAmount;
+	UE_LOG(LogTemp, Log, TEXT("%s gained attack power +%.1f."), *GetName(), BonusAmount);
+}
+
+void AMyCharacter::ApplyMoveSpeedBonus(float BonusAmount)
+{
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->MaxWalkSpeed += BonusAmount;
+		UE_LOG(LogTemp, Log, TEXT("%s gained move speed +%.1f. MaxWalkSpeed: %.1f"), *GetName(), BonusAmount, MovementComponent->MaxWalkSpeed);
+	}
+}
+
+void AMyCharacter::ApplyZoneDamage(float DamagePerSecond, float DeltaTime)
+{
+	TakeAutoAttackDamage(DamagePerSecond * DeltaTime);
 }
 
 void AMyCharacter::TryAutoAttack()

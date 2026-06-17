@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "HttpFwd.h"
+#include "IWebSocket.h"
+#include "ShowdownBattleRoyaleSubsystem.h"
 #include "TimerManager.h"
 #include "ControllerInputPollingBridge.generated.h"
 
@@ -59,9 +61,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
 	FVector PlayerSpawnLocation = FVector::ZeroVector;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale")
+	FBattleRoyaleSettings BattleRoyaleSettings;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale", meta = (ClampMin = "0.1"))
+	float StatusPollingInterval = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sync", meta = (ClampMin = "0.05"))
+	float WorldStateSyncInterval = 0.1f;
+
 private:
 	FTimerHandle PollingTimerHandle;
+	FTimerHandle StatusPollingTimerHandle;
+	FTimerHandle WorldStateSyncTimerHandle;
 	bool bRequestInFlight = false;
+	bool bStatusRequestInFlight = false;
+	bool bWorldStateRequestInFlight = false;
 	float LastDebugLogTime = -1000.0f;
 
 	UPROPERTY()
@@ -75,10 +90,17 @@ private:
 
 	TMap<FString, TObjectPtr<AMyCharacter>> PlayerCharactersById;
 	TMap<FString, TObjectPtr<AMyCharacter>> BotCharactersById;
+	TMap<FString, FVector2D> PlayerInitialPercentageMap;
+	TSharedPtr<IWebSocket> UnrealWebSocket;
+	void HandleWebSocketMessage(const FString& MessageString);
 
 	void InitializeDemoCharacters();
 	void PollInputs();
+	void PollStatus();
+	void SendWorldState();
 	void HandleInputResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
+	void HandleStatusResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
+	void HandleWorldStateResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
 	void ApplyMoveInput(const FString& PlayerId, float MoveX, float MoveY);
 	void ApplyBotMoveInput(const FString& BotId, float MoveX, float MoveY);
 	void StopDemoCharacters();
@@ -90,4 +112,5 @@ private:
 	void SpawnStaticBots();
 	FVector GetRandomBotSpawnLocation(FRandomStream& RandomStream, const TArray<FVector>& ExistingLocations) const;
 	bool IsFarEnoughFromExistingBots(const FVector& CandidateLocation, const TArray<FVector>& ExistingLocations) const;
+	UShowdownBattleRoyaleSubsystem* GetBattleRoyaleSubsystem() const;
 };

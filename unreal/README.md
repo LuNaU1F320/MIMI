@@ -35,3 +35,16 @@ The Unreal demo can consume the existing sample server at `C:\workspace\Hackatho
 
 The bridge polls controller input every `0.1s`, maps up to `MaxDemoPlayers` non-bot sample server inputs to `AMyCharacter` instances, and maps up to `MaxDemoBots` sample server `bot_` inputs to moving Unreal bot characters. Web-created bots are randomly spawned inside `BotSpawnCenter +/- BotSpawnAreaExtent`, then receive the same `moveX` and `moveY` values reported by the sample server. `BotCount` is a local fallback and defaults to `0`; use the host page's bot controls for the demo. If the sample server is unavailable or returns no input, controlled demo characters are stopped.
 
+## Local Demo: Battle Royale Rules
+
+The `ControllerInputPollingBridge` configures `UShowdownBattleRoyaleSubsystem` from its Details panel. Keep one bridge actor in the level.
+
+- `BattleRoyaleSettings.MapCenter`: world-space center for minimap, safe zone, and supply placement.
+- `BattleRoyaleSettings.MapExtent`: half-size of the playable map.
+- `BattleRoyaleSettings.PhaseDuration`: safe-zone phase duration, default `15s`.
+- `BattleRoyaleSettings.PhaseCount`: safe-zone phase count, default `4`.
+- Host state source: `GET /api/status` from the sample server.
+- Start condition: sample host state becomes `Playing`.
+- Reset condition: sample host state leaves `Playing`.
+- Runtime systems: circular current/next safe-zone display, minimap widget, per-phase supply drop, zone damage, and stacked supply equipment effects.
+
