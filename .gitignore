@@ -82,3 +82,5 @@ recordings/
 *.blend1
 *.fbx.tmp
 
+# MCP AI
+docs/
