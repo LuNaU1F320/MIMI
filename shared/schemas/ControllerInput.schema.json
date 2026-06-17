@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mimi.local/schemas/ControllerInput.schema.json",
+  "title": "ControllerInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "messageId", "sessionId", "timestamp", "payload"],
+  "properties": {
+    "type": {
+      "const": "controller.input"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^msg_[A-Za-z0-9_-]+$"
+    },
+    "sessionId": {
+      "type": "string",
+      "pattern": "^ses_[A-Za-z0-9_-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userId", "inputId", "inputType", "action", "sequence", "clientTime"],
+      "properties": {
+        "userId": {
+          "type": "string",
+          "pattern": "^user_[A-Za-z0-9_-]+$"
+        },
+        "inputId": {
+          "type": "string",
+          "pattern": "^inp_[A-Za-z0-9_-]+$"
+        },
+        "inputType": {
+          "type": "string",
+          "enum": ["button", "axis", "gesture", "choice", "text"]
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "description": "Input value. Buttons usually use 0 or 1. Axes usually use -1.0 to 1.0.",
+          "oneOf": [
+            { "type": "number" },
+            { "type": "string" },
+            { "type": "boolean" },
+            { "type": "null" }
+          ]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clientTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "controller.input",
+      "messageId": "msg_input_001",
+      "sessionId": "ses_demo_001",
+      "timestamp": "2026-06-17T04:00:03.150Z",
+      "payload": {
+        "userId": "user_player_001",
+        "inputId": "inp_001",
+        "inputType": "button",
+        "action": "confirm",
+        "value": 1,
+        "sequence": 12,
+        "clientTime": "2026-06-17T04:00:03.100Z"
+      }
+    }
+  ]
+}
+

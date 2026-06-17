@@ -1,0 +1,84 @@
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local editor and IDE files
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.code-workspace
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Node.js backend experiments
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.next/
+.nuxt/
+*.tsbuildinfo
+
+# Python backend and AI experiments
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+*.egg-info/
+
+# Unreal Engine generated files
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.opensdf
+*.sdf
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
+
+# Unreal Engine plugin generated files
+Plugins/**/Binaries/
+Plugins/**/Intermediate/
+
+# Generated assets and exports
+generated/
+exports/
+renders/
+captures/
+recordings/
+*.tmp
+*.bak
+
+# Large local media source files that should be tracked through an asset policy first
+*.psd
+*.psb
+*.blend1
+*.fbx.tmp
+

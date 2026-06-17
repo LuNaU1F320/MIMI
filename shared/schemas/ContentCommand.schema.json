@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mimi.local/schemas/ContentCommand.schema.json",
+  "title": "ContentCommand",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "messageId", "sessionId", "timestamp", "payload"],
+  "properties": {
+    "type": {
+      "const": "content.command"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^msg_[A-Za-z0-9_-]+$"
+    },
+    "sessionId": {
+      "type": "string",
+      "pattern": "^ses_[A-Za-z0-9_-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commandId", "command", "target", "issuedBy"],
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "pattern": "^cmd_[A-Za-z0-9_-]+$"
+        },
+        "command": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)+$"
+        },
+        "target": {
+          "type": "string",
+          "enum": ["backend", "unreal", "controller", "all"]
+        },
+        "issuedBy": {
+          "type": "string",
+          "pattern": "^user_[A-Za-z0-9_-]+$"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high"]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "content.command",
+      "messageId": "msg_command_001",
+      "sessionId": "ses_demo_001",
+      "timestamp": "2026-06-17T04:00:06.000Z",
+      "payload": {
+        "commandId": "cmd_next_slide_001",
+        "command": "presentation.next",
+        "target": "unreal",
+        "issuedBy": "user_host_001",
+        "parameters": {
+          "transition": "fade"
+        },
+        "priority": "normal"
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mimi.local/schemas/Heartbeat.schema.json",
+  "title": "Heartbeat",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "messageId", "sessionId", "timestamp", "payload"],
+  "properties": {
+    "type": {
+      "const": "heartbeat"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^msg_[A-Za-z0-9_-]+$"
+    },
+    "sessionId": {
+      "type": "string",
+      "pattern": "^ses_[A-Za-z0-9_-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["senderId", "senderRole", "sequence", "sentAt"],
+      "properties": {
+        "senderId": {
+          "type": "string",
+          "pattern": "^(user|client|server)_[A-Za-z0-9_-]+$"
+        },
+        "senderRole": {
+          "type": "string",
+          "enum": ["host", "controller", "unreal", "observer", "ai", "backend"]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sentAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastReceivedMessageId": {
+          "type": "string",
+          "pattern": "^msg_[A-Za-z0-9_-]+$"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "heartbeat",
+      "messageId": "msg_heartbeat_001",
+      "sessionId": "ses_demo_001",
+      "timestamp": "2026-06-17T04:00:04.000Z",
+      "payload": {
+        "senderId": "user_player_001",
+        "senderRole": "controller",
+        "sequence": 33,
+        "sentAt": "2026-06-17T04:00:04.000Z",
+        "lastReceivedMessageId": "msg_state_001"
+      }
+    }
+  ]
+}
+

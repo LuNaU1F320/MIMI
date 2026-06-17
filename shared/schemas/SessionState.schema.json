@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mimi.local/schemas/SessionState.schema.json",
+  "title": "SessionState",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "messageId", "sessionId", "timestamp", "payload"],
+  "properties": {
+    "type": {
+      "const": "session.state"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^msg_[A-Za-z0-9_-]+$"
+    },
+    "sessionId": {
+      "type": "string",
+      "pattern": "^ses_[A-Za-z0-9_-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "roomId", "mode", "status", "participantCount", "participants"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "pattern": "^ses_[A-Za-z0-9_-]+$"
+        },
+        "roomId": {
+          "type": "string",
+          "pattern": "^room_[A-Za-z0-9_-]+$"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["presentation", "recreation", "installation", "test"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["created", "waiting", "active", "paused", "ended"]
+        },
+        "joinCode": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32
+        },
+        "participantCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["userId", "displayName", "role", "connected"],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "pattern": "^user_[A-Za-z0-9_-]+$"
+              },
+              "displayName": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string",
+                "enum": ["host", "controller", "unreal", "observer", "ai"]
+              },
+              "connected": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "content": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "activeScene": {
+              "type": "string"
+            },
+            "activeCommandId": {
+              "type": "string",
+              "pattern": "^cmd_[A-Za-z0-9_-]+$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "session.state",
+      "messageId": "msg_state_001",
+      "sessionId": "ses_demo_001",
+      "timestamp": "2026-06-17T04:00:02.000Z",
+      "payload": {
+        "sessionId": "ses_demo_001",
+        "roomId": "room_demo_001",
+        "mode": "presentation",
+        "status": "active",
+        "joinCode": "MIMI42",
+        "participantCount": 2,
+        "participants": [
+          {
+            "userId": "user_host_001",
+            "displayName": "Host",
+            "role": "host",
+            "connected": true
+          },
+          {
+            "userId": "user_player_001",
+            "displayName": "Player 1",
+            "role": "controller",
+            "connected": true
+          }
+        ],
+        "content": {
+          "activeScene": "Opening",
+          "activeCommandId": "cmd_intro_001"
+        }
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mimi.local/schemas/UserJoined.schema.json",
+  "title": "UserJoined",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "messageId", "sessionId", "timestamp", "payload"],
+  "properties": {
+    "type": {
+      "const": "user.joined"
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^msg_[A-Za-z0-9_-]+$"
+    },
+    "sessionId": {
+      "type": "string",
+      "pattern": "^ses_[A-Za-z0-9_-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userId", "displayName", "role", "joinedAt"],
+      "properties": {
+        "userId": {
+          "type": "string",
+          "pattern": "^user_[A-Za-z0-9_-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "enum": ["host", "controller", "unreal", "observer", "ai"]
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "client": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "platform": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "user.joined",
+      "messageId": "msg_user_joined_001",
+      "sessionId": "ses_demo_001",
+      "timestamp": "2026-06-17T04:00:02.000Z",
+      "payload": {
+        "userId": "user_player_001",
+        "displayName": "Player 1",
+        "role": "controller",
+        "joinedAt": "2026-06-17T04:00:02.000Z",
+        "client": {
+          "platform": "mobile-web",
+          "version": "0.1.0"
+        }
+      }
+    }
+  ]
+}
+
