@@ -94,7 +94,7 @@ captures/
 recordings/
 *.tmp
 *.bak
-
+unreal/PlayWorld 5.7/
 
 # Large local media source files that should be tracked through an asset policy first
 *.psd
