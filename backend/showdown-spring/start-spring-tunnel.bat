@@ -10,6 +10,8 @@ set PORT=3000
 cd /d "%~dp0"
 set JAVA_HOME=%~dp0..\tools\jdk-17.0.19+10
 set MAVEN_HOME=%~dp0..\tools\apache-maven-3.9.16
+if not exist "%JAVA_HOME%\bin\java.exe" set JAVA_HOME=C:\Users\Admin\Documents\midnight\work\tools\jdk-17.0.19+10
+if not exist "%MAVEN_HOME%\bin\mvn.cmd" set MAVEN_HOME=C:\Users\Admin\Documents\midnight\work\tools\apache-maven-3.9.16
 set NODE_HOME=C:\nvm4w\nodejs
 set PATH=%JAVA_HOME%\bin;%MAVEN_HOME%\bin;%NODE_HOME%;%PATH%
 

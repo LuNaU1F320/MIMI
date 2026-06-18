@@ -68,6 +68,9 @@ public class GameService {
   public synchronized Player createBot(String nickname, String playerId) {
     Player player = createPlayer(nickname);
     player.isBot = true;
+    if (gameState.equals("Playing")) {
+      player.state = "Alive";
+    }
     persistQuietly("save bot player", () -> {
       persistenceService.savePlayer(player);
       return null;
@@ -129,7 +132,10 @@ public class GameService {
         player.state = "Spectator";
       }
       resetInput(player);
-      persistenceService.savePlayer(player);
+      persistQuietly("save started player", () -> {
+        persistenceService.savePlayer(player);
+        return null;
+      });
     }
     return true;
   }
@@ -351,7 +357,6 @@ public class GameService {
 
   public synchronized List<Map<String, Object>> unrealInputs() {
     return players.values().stream()
-        .filter(player -> List.of("Alive", "Dead", "Spectator").contains(player.state))
         .map(player -> {
           Map<String, Object> dto = new LinkedHashMap<>();
           dto.put("participantId", player.participantId);
@@ -363,6 +368,7 @@ public class GameService {
           dto.put("timestamp", player.inputTimestamp);
           dto.put("state", player.state);
           dto.put("connected", player.connected);
+          dto.put("isBot", player.isBot);
           return dto;
         })
         .toList();
@@ -412,7 +418,7 @@ public class GameService {
 
     int updatedCount = 0;
     for (Map<String, Object> update : positionUpdates) {
-      Object playerIdValue = update.get("playerId");
+      Object playerIdValue = update.containsKey("playerId") ? update.get("playerId") : update.get("participantId");
       if (playerIdValue == null) continue;
 
       Player player = players.get(String.valueOf(playerIdValue));
@@ -456,16 +462,21 @@ public class GameService {
 
   public synchronized void tickPreviewPhysics() {
     if (!gameState.equals("Playing")) return;
-    if (System.currentTimeMillis() - lastUnrealPositionAt < 1000) return;
 
     for (Player player : players.values()) {
       if (!player.state.equals("Alive")) continue;
 
-      if (player.isBot && ThreadLocalRandom.current().nextDouble() < 0.05) {
+      if (player.isBot && ThreadLocalRandom.current().nextDouble() < 0.25) {
         double angle = ThreadLocalRandom.current().nextDouble() * Math.PI * 2;
-        boolean isMoving = ThreadLocalRandom.current().nextDouble() < 0.7;
+        boolean isMoving = ThreadLocalRandom.current().nextDouble() < 0.85;
         updateInput(player.playerId, isMoving ? Math.cos(angle) : 0, isMoving ? Math.sin(angle) : 0);
       }
+    }
+
+    if (System.currentTimeMillis() - lastUnrealPositionAt < 1000) return;
+
+    for (Player player : players.values()) {
+      if (!player.state.equals("Alive")) continue;
 
       if (player.moveX != 0 || player.moveY != 0) {
         player.posX = Math.max(2, Math.min(98, player.posX + player.moveX * 0.8));

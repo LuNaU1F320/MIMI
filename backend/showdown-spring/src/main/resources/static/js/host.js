@@ -36,7 +36,15 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentPlayers = {};
   let arenaPlayerElements = {}; // playerId -> DOM element in arena
   let gameLoopInterval = null;
+  let lastGameState = null;
+  let lastRosterSignature = '';
   const MOVE_SPEED = 0.8; // Speed coefficient for 2D arena movement
+
+  function makeRosterSignature(players) {
+    return players
+      .map(p => `${p.playerId}:${p.nickname}:${p.state}:${p.connected}:${p.isBot}:${(p.items || []).join(',')}`)
+      .join('|');
+  }
 
   // --- 1. QR Code & URL Generation ---
   const currentHostname = window.location.hostname;
@@ -110,6 +118,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   socket.on('gameStateChanged', (data) => {
     console.log('Host state update:', data);
+    const playersList = data.players || [];
+    const rosterSignature = makeRosterSignature(playersList);
+    const stateChanged = lastGameState !== data.gameState;
+    const rosterChanged = lastRosterSignature !== rosterSignature;
+
+    const activeIds = new Set();
+    playersList.forEach(p => {
+      activeIds.add(p.playerId);
+      currentPlayers[p.playerId] = { ...(currentPlayers[p.playerId] || {}), ...p };
+    });
+    Object.keys(currentPlayers).forEach(id => {
+      if (!activeIds.has(id)) delete currentPlayers[id];
+    });
 
     // Update Header Badges
     gameStateBadge.textContent = data.gameState;
@@ -121,27 +142,27 @@ document.addEventListener('DOMContentLoaded', () => {
       arenaWrapper.style.display = 'none';
       btnShop.disabled = false;
       btnStart.disabled = false;
-      stopGameLoop();
+      if (stateChanged) stopGameLoop();
     } else if (data.gameState === 'Shop') {
       gameStateBadge.style.color = 'var(--color-mint-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'none';
       btnShop.disabled = true;
       btnStart.disabled = false;
-      stopGameLoop();
+      if (stateChanged) stopGameLoop();
     } else if (data.gameState === 'Playing') {
       gameStateBadge.style.color = 'var(--color-peach-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'block';
       btnShop.disabled = true;
       btnStart.disabled = true;
-      startGameLoop(data.players || []);
+      if (stateChanged || rosterChanged) startGameLoop(playersList);
     } else if (data.gameState === 'Result') {
       gameStateBadge.style.color = 'var(--color-coral-text)';
       btnShop.disabled = true;
       btnStart.disabled = true;
       arenaWrapper.style.display = 'none';
-      stopGameLoop();
+      if (stateChanged) stopGameLoop();
 
       // Show final winner if available
       if (data.winner) {
@@ -151,20 +172,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Update Player Counts
-    const playersList = data.players || [];
-    currentPlayers = {};
-    playersList.forEach(p => {
-      currentPlayers[p.playerId] = p;
-    });
-
     const totalCount = playersList.length;
     const aliveCount = playersList.filter(p => p.state === 'Alive').length;
     
     totalCountEl.textContent = totalCount;
     aliveCountEl.textContent = `${aliveCount} / ${totalCount}`;
 
-    // Rebuild player cards grid
-    rebuildPlayersGrid(playersList);
+    // Rebuild player cards grid only when roster/state identity actually changes.
+    if (rosterChanged) rebuildPlayersGrid(playersList);
 
     // Update live vote counts
     const voteCounts = data.voteCounts || { HealZone: 0, SpeedUp: 0, ShrinkZone: 0, SupplyBox: 0 };
@@ -174,6 +189,9 @@ document.addEventListener('DOMContentLoaded', () => {
         el.textContent = `${voteCounts[key]}표`;
       }
     });
+
+    lastGameState = data.gameState;
+    lastRosterSignature = rosterSignature;
   });
 
   // Smooth real-time update of player inputs (60fps friendly)

@@ -170,11 +170,19 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         "emoteSeq", player.emoteSeq,
         "timestamp", player.inputTimestamp,
         "state", player.state,
-        "connected", player.connected
+        "connected", player.connected,
+        "isBot", player.isBot
     ));
     broadcastUnreal(Map.of(
         "type", "inputsUpdated",
         "inputs", List.of(inputPayload(player))
+    ));
+  }
+
+  public void broadcastUnrealInputsSnapshot() {
+    broadcastUnreal(Map.of(
+        "type", "inputsUpdated",
+        "inputs", gameService.unrealInputs()
     ));
   }
 
@@ -193,6 +201,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     stopPreviewLoop();
     previewLoop = scheduler.scheduleAtFixedRate(() -> {
       gameService.tickPreviewPhysics();
+      broadcastUnrealInputsSnapshot();
       broadcastPositionsNow();
     }, 200, 200, TimeUnit.MILLISECONDS);
   }
@@ -232,7 +241,6 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     }
 
     sessionPlayerIds.put(session.getId(), player.playerId);
-    broadcastState();
     send(session, "ack", Map.of(
         "success", true,
         "participantId", player.participantId,
@@ -253,6 +261,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         payload.has("emoteSeq") ? payload.path("emoteSeq").asLong() : null
     );
     broadcastInput(player);
+    gameService.tickPreviewPhysics();
+    broadcastPositionsThrottled();
   }
 
   private void handleBuyItem(JsonNode payload, String requestId, WebSocketSession session) throws IOException {
@@ -404,6 +414,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     payload.put("timestamp", player.inputTimestamp);
     payload.put("state", player.state);
     payload.put("connected", player.connected);
+    payload.put("isBot", player.isBot);
     return payload;
   }
 

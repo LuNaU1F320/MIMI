@@ -78,6 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let emoteSeq = 0;
   let playerPositions = {};
   let currentPlayersList = [];
+  let activeScreenName = null;
   const RADAR_VISION_RANGE_UNITS = 1300; // Radar vision range in Unreal Units (6000 * 22% = 1320)
 
 
@@ -128,11 +129,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           // Session expired or server restarted
           clearSession();
-          showScreen(screenJoin);
+          showScreen(screenJoin, 'Join');
         }
       });
     } else {
-      showScreen(screenJoin);
+      showScreen(screenJoin, 'Join');
     }
   });
 
@@ -144,6 +145,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Handle server-wide state changes
   socket.on('gameStateChanged', (data) => {
     console.log('Game state updated:', data);
+    const previousGameState = currentGameState;
+    const previousPlayerState = myState;
     currentGameState = data.gameState;
     
     const playersList = data.players || [];
@@ -159,42 +162,46 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'Lobby':
         stopInputSending();
         if (myPlayerId) {
-          showScreen(screenLobby);
+          showScreen(screenLobby, 'Lobby');
           updateLobbyPlayers(playersList);
         } else {
-          showScreen(screenJoin);
+          showScreen(screenJoin, 'Join');
         }
         break;
 
       case 'Shop':
         stopInputSending();
         if (myPlayerId) {
-          showScreen(screenShop);
+          showScreen(screenShop, 'Shop');
           updateShopItems(data.shopItems || []);
           updateMyItems(myData);
         } else {
-          showScreen(screenJoin);
+          showScreen(screenJoin, 'Join');
         }
         break;
 
       case 'Playing':
         if (myPlayerId) {
-          showScreen(screenPlaying);
-          updatePlayingScreen(myData);
+          if (activeScreenName !== 'Playing') {
+            showScreen(screenPlaying, 'Playing');
+            updatePlayingScreen(myData);
+          } else if (myData && myData.state !== previousPlayerState) {
+            updatePlayingScreen(myData);
+          }
           startInputSending();
         } else {
           // Connected during gameplay -> join spectator mode
-          showScreen(screenJoin);
+          showScreen(screenJoin, 'Join');
         }
         break;
 
       case 'Result':
         stopInputSending();
         if (myPlayerId) {
-          showScreen(screenResult);
+          showScreen(screenResult, 'Result');
           showGameResults(data);
         } else {
-          showScreen(screenJoin);
+          showScreen(screenJoin, 'Join');
         }
         break;
     }
@@ -227,7 +234,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- 3. Screen Navigation & Updates ---
 
-  function showScreen(targetScreen) {
+  function showScreen(targetScreen, screenName) {
+    if (screenName && activeScreenName === screenName) return;
+
     // Hide all screens
     [screenJoin, screenLobby, screenShop, screenPlaying, screenResult].forEach(screen => {
       if (screen) screen.classList.remove('active');
@@ -235,6 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Show target screen
     if (targetScreen) targetScreen.classList.add('active');
+    activeScreenName = screenName || null;
   }
 
   function clearSession() {
@@ -694,7 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionStorage.setItem('showdown_nickname', myNickname);
 
         if (currentGameState === 'Playing') {
-          showScreen(screenPlaying);
+          showScreen(screenPlaying, 'Playing');
           socket.emit('rejoin', { playerId: myPlayerId }, (res) => {
             if (res.success) {
               myState = res.state;
@@ -703,7 +713,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           });
         } else {
-          showScreen(screenLobby);
+          showScreen(screenLobby, 'Lobby');
         }
       } else {
         alert(`입장 실패: ${response.reason}`);
@@ -716,10 +726,10 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.emit('rejoin', { playerId: myPlayerId }, (res) => {
       if (res.success) {
         myState = res.state;
-        showScreen(screenLobby);
+        showScreen(screenLobby, 'Lobby');
       } else {
         clearSession();
-        showScreen(screenJoin);
+        showScreen(screenJoin, 'Join');
       }
     });
   });
@@ -770,7 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Input sending timer (100ms interval)
   function startInputSending() {
-    if (inputInterval) clearInterval(inputInterval);
+    if (inputInterval) return;
     
     inputInterval = setInterval(() => {
       if (myState === 'Alive' && currentGameState === 'Playing') {
