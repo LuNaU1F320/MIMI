@@ -1,4 +1,4 @@
-// Host Dashboard Application Logic
+﻿// Host Dashboard Application Logic
 
 document.addEventListener('DOMContentLoaded', () => {
   const socket = io();
@@ -17,6 +17,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnReset = document.getElementById('btn-reset');
   const botCountInput = document.getElementById('bot-count');
   const btnAddBots = document.getElementById('btn-add-bots');
+
+  // Shop is disabled on the Spring MVP backend until shop APIs are implemented.
+  if (btnShop) {
+    btnShop.disabled = true;
+    btnShop.title = 'Spring MVP backend does not support shop yet.';
+  }
   
   const playersGrid = document.getElementById('players-grid');
   const winnerBannerWrapper = document.getElementById('winner-banner-wrapper');
@@ -482,3 +488,5 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.emit('adminAddBots', { count });
   });
 });
+
+

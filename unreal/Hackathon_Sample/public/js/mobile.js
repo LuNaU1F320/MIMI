@@ -1,4 +1,4 @@
-// Mobile Client Application Logic
+﻿// Mobile Client Application Logic
 
 // Global debug logger directly on mobile UI for presentation testing
 window.onerror = function(msg, url, line, col, error) {
@@ -52,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const joystickTrack = document.getElementById('joystick-track');
   const joystickKnob = document.getElementById('joystick-knob');
   const joystickDebug = document.getElementById('joystick-debug');
+  const btnJump = document.getElementById('btn-jump');
+  const btnEmote = document.getElementById('btn-emote');
   const spectatorPanel = document.getElementById('spectator-panel');
   
   const resultBadge = document.getElementById('result-badge');
@@ -72,10 +74,18 @@ document.addEventListener('DOMContentLoaded', () => {
   let joystickInstance = null;
   let inputInterval = null;
   let lastSentVector = { x: 0, y: 0 };
+  let jumpSeq = 0;
+  let emoteSeq = 0;
   let playerPositions = {};
   let currentPlayersList = [];
   const RADAR_VISION_RANGE_UNITS = 1300; // Radar vision range in Unreal Units (6000 * 22% = 1320)
 
+
+  function syncActionButtons() {
+    const disabled = myState !== 'Alive' || currentGameState !== 'Playing';
+    if (btnJump) btnJump.disabled = disabled;
+    if (btnEmote) btnEmote.disabled = disabled;
+  }
   // --- 1. Premium Visual Effects ---
   
   // Water ripple effect on screen touch
@@ -436,6 +446,8 @@ document.addEventListener('DOMContentLoaded', () => {
           onRelease: () => {
             joystickDebug.textContent = 'X: 0.00, Y: 0.00';
             lastSentVector = { x: 0, y: 0 };
+    jumpSeq = 0;
+    emoteSeq = 0;
             sendInputToServer(0, 0); // instantly send zero
           }
         });
@@ -740,6 +752,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  if (btnJump) {
+    btnJump.addEventListener('click', () => {
+      if (myState !== 'Alive' || currentGameState !== 'Playing') return;
+      jumpSeq += 1;
+      sendInputToServer(lastSentVector.x, lastSentVector.y);
+    });
+  }
+
+  if (btnEmote) {
+    btnEmote.addEventListener('click', () => {
+      if (myState !== 'Alive' || currentGameState !== 'Playing') return;
+      emoteSeq += 1;
+      sendInputToServer(lastSentVector.x, lastSentVector.y);
+    });
+  }
+
   // Input sending timer (100ms interval)
   function startInputSending() {
     if (inputInterval) clearInterval(inputInterval);
@@ -759,9 +787,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     joystickInstance = null; // reset instance so it can recreate next game
     lastSentVector = { x: 0, y: 0 };
+    jumpSeq = 0;
+    emoteSeq = 0;
   }
 
   function sendInputToServer(x, y) {
-    socket.emit('moveInput', { moveX: x, moveY: y });
+    socket.emit('moveInput', { moveX: x, moveY: y, jumpSeq, emoteSeq });
   }
 });
+
+
