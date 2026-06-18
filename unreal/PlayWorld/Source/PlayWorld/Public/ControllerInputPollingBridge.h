@@ -26,8 +26,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
 	TObjectPtr<AMyCharacter> ControlledCharacter;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "1", ClampMax = "4"))
-	int32 MaxDemoPlayers = 4;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "1", ClampMax = "100"))
+	int32 MaxDemoPlayers = 64;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "0"))
 	int32 MaxDemoBots = 20;

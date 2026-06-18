@@ -218,40 +218,6 @@ html, body, #app, .screen, .card, button, input, canvas, .joystick-track, .joyst
   justify-content: center;
 }
 
-.winner-control-panel {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, var(--color-mint-light), var(--color-blue-light));
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  box-shadow: var(--shadow-inset);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 24px;
-}
-
-.winner-control-kicker {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--color-mint-text);
-  margin-bottom: 8px;
-}
-
-.winner-control-title {
-  font-size: clamp(2.25rem, 12vw, 4rem);
-  font-weight: 900;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-}
-
-.winner-control-subtitle {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
 #minimap-canvas {
   width: 100%;
   height: 100%;
@@ -300,12 +266,6 @@ html, body, #app, .screen, .card, button, input, canvas, .joystick-track, .joyst
   background-color: var(--color-blue-light);
   color: var(--color-blue-text);
   border: 1px solid var(--color-blue-border);
-}
-
-.status-winner {
-  background-color: var(--color-mint-light);
-  color: var(--color-mint-text);
-  border: 1px solid var(--color-mint-border);
 }
 
 .player-health-container {

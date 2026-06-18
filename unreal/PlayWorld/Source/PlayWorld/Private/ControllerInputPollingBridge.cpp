@@ -15,12 +15,11 @@ void AControllerInputPollingBridge::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (UWorld* World = GetWorld())
-	{
-		if (UControllerInputBridgeSubsystem* BridgeSubsystem = World->GetSubsystem<UControllerInputBridgeSubsystem>())
-		{
-			BridgeSubsystem->ConfigureAndStart(MakeBridgeSettings());
-		}
+
+	bShuttingDown = false;
+	InitializeDemoCharacters();
+
+
 	}
 }
 

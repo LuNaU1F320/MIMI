@@ -6,11 +6,30 @@ desktop.ini
 # Local editor and IDE files
 .idea/
 .vscode/
+**/.vs/
 *.suo
+*.vsidx
+*.VC.db
+*.VC.opendb
+*.ipch
 *.user
 *.userosscache
 *.sln.docstates
 *.code-workspace
+*.vsconfig
+
+
+# Local DB files
+backend/showdown-spring/data/
+*.trace.db
+*.trace.db.old
+*.mv.db
+
+# Spring build output
+target/
+**/target/
+*.class
+
 
 # Logs
 *.log
@@ -75,6 +94,7 @@ captures/
 recordings/
 *.tmp
 *.bak
+unreal/PlayWorld 5.7/
 
 # Large local media source files that should be tracked through an asset policy first
 *.psd

@@ -36,104 +36,73 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentPlayers = {};
   let arenaPlayerElements = {}; // playerId -> DOM element in arena
   let gameLoopInterval = null;
+  let lastGameState = null;
+  let lastRosterSignature = '';
   const MOVE_SPEED = 0.8; // Speed coefficient for 2D arena movement
+
+  function makeRosterSignature(players) {
+    return players
+      .map(p => `${p.playerId}:${p.nickname}:${p.state}:${p.connected}:${p.isBot}:${(p.items || []).join(',')}`)
+      .join('|');
+  }
 
   // --- 1. QR Code & URL Generation ---
   const currentHostname = window.location.hostname;
-  let joinUrl = "";
-  connectionUrlEl.innerHTML = `<span style="color: var(--color-mint-text); font-weight: 500;">🌐 Cloudflare 터널 연결 대기 중...</span>`;
+  let joinUrl = window.location.origin;
+  connectionUrlEl.textContent = joinUrl;
 
-  let pollCount = 0;
-  const maxPolls = 15; // Max 15 seconds wait
-
-  function fetchHostInfo() {
-    fetch('/api/host-info')
-      .then(res => res.json())
-      .then(data => {
-        const serverLanIp = data.localIp;
-        const port = data.port;
-        const tunnelUrl = data.tunnelUrl;
-
-        if (tunnelUrl) {
-          // Tunnel is active! Update UI
-          joinUrl = tunnelUrl;
-          connectionUrlEl.textContent = joinUrl;
-
-          // Remove any existing helper text
-          const existingText = connectionUrlEl.parentNode.querySelector('.tunnel-helper-text');
-          if (existingText) {
-            existingText.remove();
-          }
-
-          const tunnelText = document.createElement('p');
-          tunnelText.className = 'tunnel-helper-text';
-          tunnelText.style.color = 'var(--color-mint-text)';
-          tunnelText.style.fontSize = '0.85rem';
-          tunnelText.style.marginTop = '8px';
-          tunnelText.style.fontWeight = '600';
-          tunnelText.innerHTML = `🌐 외부 인터넷 접속 터널 활성화 완료!<br>(3G/4G/5G/LTE 및 다른 와이파이 환경에서도 자유롭게 접속 가능)`;
-          connectionUrlEl.parentNode.appendChild(tunnelText);
-
-          // Draw QR code
-          qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
-          qrCodeImg.onload = () => {
-            qrPlaceholder.style.display = 'none';
-            qrCodeImg.style.display = 'block';
-          };
-        } else if (pollCount < maxPolls) {
-          // Tunnel not ready yet, retry in 1s
-          pollCount++;
-          setTimeout(fetchHostInfo, 1000);
-        } else {
-          // Timeout, fallback to LAN IP / localhost
-          const fallbackOrigin = (currentHostname === 'localhost' || currentHostname === '127.0.0.1')
-            ? `http://${serverLanIp}:${port}`
-            : window.location.origin;
-
-          joinUrl = fallbackOrigin;
-          connectionUrlEl.textContent = joinUrl;
-
-          const existingText = connectionUrlEl.parentNode.querySelector('.tunnel-helper-text');
-          if (existingText) {
-            existingText.remove();
-          }
-
-          const warningText = document.createElement('p');
-          warningText.className = 'tunnel-helper-text';
-          warningText.style.color = 'var(--color-peach-text)';
-          warningText.style.fontSize = '0.8rem';
-          warningText.style.marginTop = '8px';
-          warningText.style.fontWeight = '600';
-          warningText.innerHTML = `⚠️ 터널 연결 시간 초과: 모바일 기기 접속을 위해 스마트폰을 <b>동일한 Wi-Fi</b>에 연결해 주세요.<br>(또는 PC에서 <a href="${joinUrl}/host.html" style="color: var(--color-blue-text); text-decoration: underline;">이 링크</a>로 다시 접속하세요)`;
-          connectionUrlEl.parentNode.appendChild(warningText);
-
-          // Draw QR code with LAN IP
-          qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
-          qrCodeImg.onload = () => {
-            qrPlaceholder.style.display = 'none';
-            qrCodeImg.style.display = 'block';
-          };
-        }
-      })
-      .catch(err => {
-        console.error('Failed to fetch host network info, falling back:', err);
-        if (pollCount < maxPolls) {
-          pollCount++;
-          setTimeout(fetchHostInfo, 1000);
-        } else {
-          // Fallback immediately on error after timeout
-          joinUrl = window.location.origin;
-          connectionUrlEl.textContent = joinUrl;
-          qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
-          qrCodeImg.onload = () => {
-            qrPlaceholder.style.display = 'none';
-            qrCodeImg.style.display = 'block';
-          };
-        }
-      });
-  }
-
-  fetchHostInfo();
+  // Fetch host network info from server to automatically handle localhost/tunnels
+  fetch('/api/host-info')
+    .then(res => res.json())
+    .then(data => {
+      const serverLanIp = data.localIp;
+      const port = data.port;
+      const tunnelUrl = data.tunnelUrl;
+      
+      if (tunnelUrl) {
+        // If tunnel is open, prioritize it as the join URL (works everywhere on any network)
+        joinUrl = tunnelUrl;
+        connectionUrlEl.textContent = joinUrl;
+        
+        // Add a helper text showing tunnel is active
+        const tunnelText = document.createElement('p');
+        tunnelText.style.color = 'var(--color-mint-text)';
+        tunnelText.style.fontSize = '0.85rem';
+        tunnelText.style.marginTop = '8px';
+        tunnelText.style.fontWeight = '600';
+        tunnelText.innerHTML = `🌐 외부 인터넷 접속 터널 활성화 완료!<br>(3G/4G/5G/LTE 및 다른 와이파이 환경에서도 자유롭게 접속 가능)`;
+        connectionUrlEl.parentNode.appendChild(tunnelText);
+      } else if (currentHostname === 'localhost' || currentHostname === '127.0.0.1') {
+        // If tunnel failed, fall back to LAN IP warning (requires same Wi-Fi)
+        joinUrl = `http://${serverLanIp}:${port}`;
+        connectionUrlEl.textContent = joinUrl;
+        
+        // Add a warning helper below the URL
+        const warningText = document.createElement('p');
+        warningText.style.color = 'var(--color-peach-text)';
+        warningText.style.fontSize = '0.8rem';
+        warningText.style.marginTop = '8px';
+        warningText.style.fontWeight = '600';
+        warningText.innerHTML = `⚠️ 터널 미개설: 모바일 기기 접속을 위해 스마트폰을 <b>동일한 Wi-Fi</b>에 연결해 주세요.<br>(또는 PC에서 <a href="${joinUrl}/host.html" style="color: var(--color-blue-text); text-decoration: underline;">이 링크</a>로 다시 접속하세요)`;
+        connectionUrlEl.parentNode.appendChild(warningText);
+      }
+      
+      // Load QR code with the best available join URL
+      qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
+      qrCodeImg.onload = () => {
+        qrPlaceholder.style.display = 'none';
+        qrCodeImg.style.display = 'block';
+      };
+    })
+    .catch(err => {
+      console.error('Failed to fetch host network info, falling back to window.location.origin:', err);
+      // Fallback to page location if API fails
+      qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
+      qrCodeImg.onload = () => {
+        qrPlaceholder.style.display = 'none';
+        qrCodeImg.style.display = 'block';
+      };
+    });
 
   // --- 2. Socket Connection Handlers ---
 
@@ -149,6 +118,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   socket.on('gameStateChanged', (data) => {
     console.log('Host state update:', data);
+    const playersList = data.players || [];
+    const rosterSignature = makeRosterSignature(playersList);
+    const stateChanged = lastGameState !== data.gameState;
+    const rosterChanged = lastRosterSignature !== rosterSignature;
+
+    const activeIds = new Set();
+    playersList.forEach(p => {
+      activeIds.add(p.playerId);
+      currentPlayers[p.playerId] = { ...(currentPlayers[p.playerId] || {}), ...p };
+    });
+    Object.keys(currentPlayers).forEach(id => {
+      if (!activeIds.has(id)) delete currentPlayers[id];
+    });
 
     // Update Header Badges
     gameStateBadge.textContent = data.gameState;
@@ -160,27 +142,27 @@ document.addEventListener('DOMContentLoaded', () => {
       arenaWrapper.style.display = 'none';
       btnShop.disabled = false;
       btnStart.disabled = false;
-      stopGameLoop();
+      if (stateChanged) stopGameLoop();
     } else if (data.gameState === 'Shop') {
       gameStateBadge.style.color = 'var(--color-mint-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'none';
       btnShop.disabled = true;
       btnStart.disabled = false;
-      stopGameLoop();
+      if (stateChanged) stopGameLoop();
     } else if (data.gameState === 'Playing') {
       gameStateBadge.style.color = 'var(--color-peach-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'block';
       btnShop.disabled = true;
       btnStart.disabled = true;
-      startGameLoop(data.players || []);
+      if (stateChanged || rosterChanged) startGameLoop(playersList);
     } else if (data.gameState === 'Result') {
       gameStateBadge.style.color = 'var(--color-coral-text)';
       btnShop.disabled = true;
       btnStart.disabled = true;
       arenaWrapper.style.display = 'none';
-      stopGameLoop();
+      if (stateChanged) stopGameLoop();
 
       // Show final winner if available
       if (data.winner) {
@@ -190,20 +172,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Update Player Counts
-    const playersList = data.players || [];
-    currentPlayers = {};
-    playersList.forEach(p => {
-      currentPlayers[p.playerId] = p;
-    });
-
     const totalCount = playersList.length;
     const aliveCount = playersList.filter(p => p.state === 'Alive').length;
     
     totalCountEl.textContent = totalCount;
     aliveCountEl.textContent = `${aliveCount} / ${totalCount}`;
 
-    // Rebuild player cards grid
-    rebuildPlayersGrid(playersList);
+    // Rebuild player cards grid only when roster/state identity actually changes.
+    if (rosterChanged) rebuildPlayersGrid(playersList);
 
     // Update live vote counts
     const voteCounts = data.voteCounts || { HealZone: 0, SpeedUp: 0, ShrinkZone: 0, SupplyBox: 0 };
@@ -213,6 +189,9 @@ document.addEventListener('DOMContentLoaded', () => {
         el.textContent = `${voteCounts[key]}표`;
       }
     });
+
+    lastGameState = data.gameState;
+    lastRosterSignature = rosterSignature;
   });
 
   // Smooth real-time update of player inputs (60fps friendly)

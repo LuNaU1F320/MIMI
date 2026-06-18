@@ -80,9 +80,7 @@ AMyCharacter::AMyCharacter()
 	ZoneDamageReceiverComponent = CreateDefaultSubobject<UZoneDamageReceiverComponent>(TEXT("ZoneDamageReceiverComponent"));
 
 	bUseControllerRotationYaw = false;
-	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
-	GetCharacterMovement()->bRunPhysicsWithNoController = true;
+	ApplyExternalMovementSettings();
 
 	UpdateAttackBoxTransform();
 }
@@ -93,6 +91,7 @@ void AMyCharacter::BeginPlay()
 
 	CurrentHP = FMath::Clamp(CurrentHP, 0.0f, MaxHP);
 	bIsAlive = CurrentHP > 0.0f;
+	ApplyExternalMovementSettings();
 	FinishAttack();
 
 	if (bIsAlive)
@@ -144,6 +143,8 @@ void AMyCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 
 void AMyCharacter::SetMoveInput(float MoveX, float MoveY)
 {
+	ApplyExternalMovementSettings();
+
 	CurrentMoveInput = FVector2D(
 		FMath::Clamp(MoveX, -1.0f, 1.0f),
 		FMath::Clamp(MoveY, -1.0f, 1.0f));
@@ -157,12 +158,7 @@ void AMyCharacter::SetMoveInput(float MoveX, float MoveY)
 void AMyCharacter::SetExternalMovementEnabled(bool bEnabled)
 {
 	bEnableWASDMovement = bEnabled;
-
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
-	{
-		MovementComponent->bRunPhysicsWithNoController = bEnabled;
-		MovementComponent->Activate(true);
-	}
+	ApplyExternalMovementSettings();
 }
 
 void AMyCharacter::ApplyAttackRangeBonus(float BonusAmount)
@@ -241,6 +237,23 @@ void AMyCharacter::TakeAutoAttackDamage(float DamageAmount)
 	GetWorldTimerManager().ClearTimer(AutoAttackTimerHandle);
 	SetActorEnableCollision(false);
 	UE_LOG(LogTemp, Log, TEXT("%s died."), *GetName());
+}
+
+void AMyCharacter::ResetForNextRound()
+{
+	CurrentHP = MaxHP;
+	bIsAlive = true;
+	SetActorEnableCollision(true);
+	SetMoveInput(0.0f, 0.0f);
+	SetExternalMovementEnabled(true);
+	ApplyExternalMovementSettings();
+	FinishAttack();
+
+	if (GetWorld())
+	{
+		GetWorldTimerManager().ClearTimer(AutoAttackTimerHandle);
+		GetWorldTimerManager().SetTimer(AutoAttackTimerHandle, this, &AMyCharacter::TryAutoAttack, AutoAttackInterval, true);
+	}
 }
 
 void AMyCharacter::UpdateAttackBoxTransform()
@@ -504,6 +517,20 @@ void AMyCharacter::ApplyCurrentMoveInput()
 
 	AddMovementInput(FVector::ForwardVector, CurrentMoveInput.Y, true);
 	AddMovementInput(FVector::RightVector, CurrentMoveInput.X, true);
+}
+
+void AMyCharacter::ApplyExternalMovementSettings()
+{
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		const float EffectiveMoveSpeed = FMath::Max(ExternalMoveSpeed, MinimumExternalMoveSpeed);
+		MovementComponent->bOrientRotationToMovement = true;
+		MovementComponent->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+		MovementComponent->bRunPhysicsWithNoController = true;
+		MovementComponent->MaxWalkSpeed = EffectiveMoveSpeed;
+		MovementComponent->SetMovementMode(MOVE_Walking);
+		MovementComponent->Activate(true);
+	}
 }
 
 void AMyCharacter::MoveForward(float Value)
