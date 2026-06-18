@@ -40,10 +40,25 @@ int32 UBattleRoyaleMinimapWidget::NativePaint(
 
 	const FBattleRoyaleSettings& Settings = Subsystem->GetSettings();
 	const float Scale = FMath::Min(Size.X / (Settings.MapExtent.X * 2.0f), Size.Y / (Settings.MapExtent.Y * 2.0f));
-	const FVector2D CurrentZoneCenter = WorldToMinimap(Subsystem->GetCurrentZone().Center, Size) + TopLeft;
-	const FVector2D NextZoneCenter = WorldToMinimap(Subsystem->GetNextZone().Center, Size) + TopLeft;
-	DrawCircle(OutDrawElements, BaseLayer + 2, AllottedGeometry, NextZoneCenter, Subsystem->GetNextZone().Radius * Scale, FLinearColor(1.0f, 0.9f, 0.1f, 0.65f), 2.0f);
-	DrawCircle(OutDrawElements, BaseLayer + 3, AllottedGeometry, CurrentZoneCenter, Subsystem->GetCurrentZone().Radius * Scale, FLinearColor(0.1f, 1.0f, 0.2f, 0.85f), 3.0f);
+
+	// Draw Next (Yellow) Zone if we are not in the final phase
+	if (!Subsystem->IsWarmUpPhase() && Subsystem->GetCurrentPhaseIndex() == Settings.PhaseCount - 1)
+	{
+		// Hide Next Zone in final phase
+	}
+	else
+	{
+		const FVector2D NextZoneCenter = WorldToMinimap(Subsystem->GetNextZone().Center, Size) + TopLeft;
+		DrawCircle(OutDrawElements, BaseLayer + 2, AllottedGeometry, NextZoneCenter, Subsystem->GetNextZone().Radius * Scale, FLinearColor(1.0f, 0.9f, 0.1f, 0.65f), 2.0f);
+	}
+
+	// Draw Current (Green/Red) Zone if we are not in warmup phase
+	if (!Subsystem->IsWarmUpPhase())
+	{
+		const FVector2D CurrentZoneCenter = WorldToMinimap(Subsystem->GetCurrentZone().Center, Size) + TopLeft;
+		FLinearColor ZoneColor = (Subsystem->GetCurrentPhaseIndex() == Settings.PhaseCount - 1) ? FLinearColor(1.0f, 0.1f, 0.1f, 0.85f) : FLinearColor(0.1f, 1.0f, 0.2f, 0.85f);
+		DrawCircle(OutDrawElements, BaseLayer + 3, AllottedGeometry, CurrentZoneCenter, Subsystem->GetCurrentZone().Radius * Scale, ZoneColor, 3.0f);
+	}
 
 	auto DrawPoint = [&](const FVector2D& WorldLocation, const FLinearColor& Color, float HalfSize)
 	{

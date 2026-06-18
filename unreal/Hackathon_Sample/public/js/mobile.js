@@ -61,13 +61,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const resultTimeTxt = document.getElementById('result-time-txt');
   const btnLobbyReturn = document.getElementById('btn-lobby-return');
   
+  const minimapContainer = document.getElementById('minimap-container');
+  const winnerControlPanel = document.getElementById('winner-control-panel');
   const minimapCanvas = document.getElementById('minimap-canvas');
   const minimapCtx = minimapCanvas ? minimapCanvas.getContext('2d') : null;
 
   // Application State
   let myPlayerId = sessionStorage.getItem('showdown_playerId') || null;
   let myNickname = sessionStorage.getItem('showdown_nickname') || null;
-  let myState = 'Joined'; // 'Joined' | 'Alive' | 'Dead' | 'Spectator'
+  let myState = 'Joined'; // 'Joined' | 'Alive' | 'Dead' | 'Spectator' | 'Winner'
   let currentGameState = 'Lobby';
   let joystickInstance = null;
   let inputInterval = null;
@@ -147,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Process UI depending on Game State
     switch (currentGameState) {
       case 'Lobby':
+        setWinnerCelebrationVisible(false);
         stopInputSending();
         if (myPlayerId) {
           showScreen(screenLobby);
@@ -157,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
 
       case 'Shop':
+        setWinnerCelebrationVisible(false);
         stopInputSending();
         if (myPlayerId) {
           showScreen(screenShop);
@@ -168,6 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
 
       case 'Playing':
+        setWinnerCelebrationVisible(false);
         if (myPlayerId) {
           showScreen(screenPlaying);
           updatePlayingScreen(myData);
@@ -179,11 +184,18 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
 
       case 'Result':
-        stopInputSending();
         if (myPlayerId) {
-          showScreen(screenResult);
-          showGameResults(data);
+          if (isCurrentPlayerWinner(data, myData)) {
+            myState = 'Winner';
+            showWinnerController(data, myData);
+          } else {
+            setWinnerCelebrationVisible(false);
+            stopInputSending();
+            showScreen(screenResult);
+            showGameResults(data);
+          }
         } else {
+          stopInputSending();
           showScreen(screenJoin);
         }
         break;
@@ -225,6 +237,32 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Show target screen
     if (targetScreen) targetScreen.classList.add('active');
+  }
+
+  function isCurrentPlayerWinner(data, myData) {
+    return (data.winner && data.winner.playerId === myPlayerId) || (myData && myData.state === 'Winner');
+  }
+
+  function setWinnerCelebrationVisible(isVisible) {
+    if (minimapContainer) {
+      minimapContainer.style.display = isVisible ? 'none' : 'flex';
+    }
+    if (winnerControlPanel) {
+      winnerControlPanel.style.display = isVisible ? 'flex' : 'none';
+    }
+  }
+
+  function showWinnerController(data, myData) {
+    const winnerData = myData || data.winner || { playerId: myPlayerId, nickname: myNickname };
+    const playerData = {
+      ...winnerData,
+      state: 'Winner'
+    };
+
+    setWinnerCelebrationVisible(true);
+    showScreen(screenPlaying);
+    updatePlayingScreen(playerData);
+    startInputSending();
   }
 
   function clearSession() {
@@ -395,15 +433,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!playerData) return;
     
     playingNickname.textContent = playerData.nickname;
+    const canControl = playerData.state === 'Alive' || playerData.state === 'Winner';
     
-    if (playerData.state === 'Alive') {
-      playingStatus.textContent = 'ALIVE';
-      playingStatus.className = 'player-status-role status-alive';
+    if (canControl) {
+      playingStatus.textContent = playerData.state === 'Winner' ? 'WINNER' : 'ALIVE';
+      playingStatus.className = playerData.state === 'Winner'
+        ? 'player-status-role status-winner'
+        : 'player-status-role status-alive';
       spectatorPanel.style.display = 'none';
       
       // Default HP to 100
       healthValue.textContent = '100';
       healthBar.style.width = '100%';
+
+      joystickTrack.style.opacity = '1';
+      joystickTrack.style.pointerEvents = 'auto';
     } else {
       // Dead or Spectator
       playingStatus.textContent = 'SPECTATOR';
@@ -420,10 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialize joystick once when entering screen
-    if (!joystickInstance && playerData.state === 'Alive') {
-      joystickTrack.style.opacity = '1';
-      joystickTrack.style.pointerEvents = 'auto';
-      
+    if (!joystickInstance && canControl) {
       // Delay initialization slightly to let the browser paint the active screen
       // and calculate bounds correctly
       setTimeout(() => {
@@ -745,11 +786,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (inputInterval) clearInterval(inputInterval);
     
     inputInterval = setInterval(() => {
-      if (myState === 'Alive' && currentGameState === 'Playing') {
+      if (canSendCurrentInput()) {
         // Send inputs
         sendInputToServer(lastSentVector.x, lastSentVector.y);
       }
     }, 100);
+  }
+
+  function canSendCurrentInput() {
+    return (myState === 'Alive' && currentGameState === 'Playing') ||
+      (myState === 'Winner' && currentGameState === 'Result');
   }
 
   function stopInputSending() {

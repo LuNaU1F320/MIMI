@@ -26,18 +26,24 @@ The Unreal demo can consume the existing sample server at `C:\workspace\Hackatho
 - Affected domain: Unreal only in this repository.
 - Backend source: external sample server on `http://localhost:3000`.
 - Protocol surface: the sample HTTP endpoint `GET /api/unreal/inputs`, which represents controller movement input for the Unreal runtime.
-- Unreal entry point: place one `ControllerInputPollingBridge` actor in the level, or spawn it from a Blueprint/test level.
+- Unreal entry point: place one `ControllerInputPollingBridge` bootstrap actor in the level, or spawn it from a Blueprint/test level.
 - Local test:
   1. Run `npm start` in `C:\workspace\Hackathon_Sample\Hackathon_Sample`.
   2. Open `http://localhost:3000/host.html`.
-  3. Start PlayWorld PIE with a `ControllerInputPollingBridge` actor in the level.
+  3. Start PlayWorld PIE with a `ControllerInputPollingBridge` bootstrap actor in the level.
   4. Join from the sample mobile page and press Start Game in the host page.
 
 The bridge polls controller input every `0.1s`, maps up to `MaxDemoPlayers` non-bot sample server inputs to `AMyCharacter` instances, and maps up to `MaxDemoBots` sample server `bot_` inputs to moving Unreal bot characters. Web-created bots are randomly spawned inside `BotSpawnCenter +/- BotSpawnAreaExtent`, then receive the same `moveX` and `moveY` values reported by the sample server. `BotCount` is a local fallback and defaults to `0`; use the host page's bot controls for the demo. If the sample server is unavailable or returns no input, controlled demo characters are stopped.
 
+When the sample server enters `Result`, only the winner keeps sending controller input. The mobile winner view keeps the joystick area visible and replaces the minimap area with a victory message. Non-winners still move to the result screen. This reuses the existing `moveInput` and `inputsUpdated` messages and does not add protocol fields.
+
+## Runtime GameMode
+
+`APlayWorldGameMode` is the project default GameMode. It disables default pawn, HUD, and spectator pawn spawning so PIE does not create an extra player pawn. Unreal still creates a local `PlayerController` for viewport ownership, camera view targets, and UMG widgets; gameplay input is handled by the bridge subsystem instead of a possessed pawn.
+
 ## Local Demo: Battle Royale Rules
 
-The `ControllerInputPollingBridge` configures `UShowdownBattleRoyaleSubsystem` from its Details panel. Keep one bridge actor in the level.
+The `ControllerInputPollingBridge` keeps level-editable demo settings in its Details panel, then starts `UControllerInputBridgeSubsystem`. The subsystem owns WebSocket input, character mapping, world-state sync, and `UShowdownBattleRoyaleSubsystem` configuration. Keep one bridge actor in the level as the bootstrap/config source.
 
 - `BattleRoyaleSettings.MapCenter`: world-space center for minimap, safe zone, and supply placement.
 - `BattleRoyaleSettings.MapExtent`: half-size of the playable map.
@@ -47,4 +53,24 @@ The `ControllerInputPollingBridge` configures `UShowdownBattleRoyaleSubsystem` f
 - Start condition: sample host state becomes `Playing`.
 - Reset condition: sample host state leaves `Playing`.
 - Runtime systems: circular current/next safe-zone display, minimap widget, per-phase supply drop, zone damage, and stacked supply equipment effects.
+
+## Local Demo: Battle Royale Zone Camera
+
+The Battle Royale demo includes a quarter-view camera for the safe-zone system.
+
+- Affected domain: Unreal only.
+- Protocol surface: none; this uses local `UShowdownBattleRoyaleSubsystem` state.
+- Entry point: keep one `ControllerInputPollingBridge` bootstrap actor in the level. `UControllerInputBridgeSubsystem` will reuse an existing `BattleRoyaleZoneCameraActor` or spawn one when `bAutoCreateZoneCamera` is enabled.
+- Default view: the camera starts by framing the full configured map. With the default `MapExtent` of `(3000, 3000)`, the playable field is `6000 x 6000`.
+- Framing behavior: the camera defaults to a very low-FOV perspective view (`FOV=12`, `CameraDistance=45000`, `Pitch=-50.473487`, `Yaw=-0.166535`) to reduce trapezoid distortion while keeping a 3D look. Switch `ProjectionMode` to Orthographic only when distortion must be fully removed.
+- Initial framing override: `BattleRoyaleZoneCameraActor` defaults `InitialViewExtentOverride` to `(3000, 3000)` so the initial camera fills the viewport with the `6000 x 6000` floor even if level demo settings drift larger.
+- Runtime behavior: when the match leaves warmup, the camera follows the current safe-zone center and interpolates its orthographic width to the projected safe-zone bounds. Use `bCoverViewportWithMap` for skybox-free framing or disable it if the full bounds must always remain visible.
+- Visual behavior: the current safe zone draws a highlighted interior plus a strong border; the next safe zone draws a border only.
+- Local test:
+  1. Disable Live Coding or close Unreal Editor before compiling C++.
+  2. Start PIE with one `ControllerInputPollingBridge` bootstrap actor in the level.
+  3. Start the sample host game so the Battle Royale subsystem enters `Playing`.
+  4. Verify the camera smoothly follows each shrinking safe zone and that the ground no longer appears trapezoidal at distance.
+
+Perspective projection cannot fully remove floor trapezoid distortion. The default low-FOV, long-distance camera reduces it while preserving depth.
 

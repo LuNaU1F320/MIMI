@@ -4,6 +4,12 @@
 #include "CharacterEquipmentComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "ShowdownBattleRoyaleSubsystem.h"
+
+#include "BattleRoyaleMinimapWidget.h"
+#include "CharacterEquipmentComponent.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "MyCharacter.h"
 #include "SafeZoneVisualizerActor.h"
@@ -17,6 +23,11 @@ void UShowdownBattleRoyaleSubsystem::Tick(float DeltaTime)
 		return;
 	}
 
+	if (bBattleRoyaleCompleted)
+	{
+		return;
+	}
+
 	if (bWarmUpPhase)
 	{
 		WarmUpTimeRemaining -= DeltaTime;
@@ -25,7 +36,8 @@ void UShowdownBattleRoyaleSubsystem::Tick(float DeltaTime)
 			bWarmUpPhase = false;
 			CurrentPhaseIndex = 0;
 			PhaseElapsedTime = 0.0f;
-			GenerateInitialZones();
+			PreviousZone = GetMapZone();
+			CurrentZone = PreviousZone;
 			CreateOrUpdateZoneVisualizers();
 			SpawnSupplyForPhase();
 			UE_LOG(LogTemp, Log, TEXT("Showdown battle royale warmup finished. Phase 1 active."));
@@ -35,20 +47,50 @@ void UShowdownBattleRoyaleSubsystem::Tick(float DeltaTime)
 
 	PhaseElapsedTime += DeltaTime;
 
-	// If it is the final phase, shrink the safe zone radius gradually to 0
+	float WaitDuration = FMath::Max(0.0f, Settings.PhaseDuration - 5.0f);
+	float ShrinkDuration = FMath::Min(5.0f, Settings.PhaseDuration);
+
 	if (CurrentPhaseIndex == Settings.PhaseCount - 1)
 	{
-		float Alpha = FMath::Clamp(PhaseElapsedTime / Settings.PhaseDuration, 0.0f, 1.0f);
-		float StartRadius = GetPhaseRadius(CurrentPhaseIndex);
-		CurrentZone.Radius = FMath::Lerp(StartRadius, 0.0f, Alpha);
+		// Final phase: shrink to 0.0f
+		if (PhaseElapsedTime < WaitDuration)
+		{
+			CurrentZone = PreviousZone;
+		}
+		else
+		{
+			float Alpha = FMath::Clamp((PhaseElapsedTime - WaitDuration) / ShrinkDuration, 0.0f, 1.0f);
+			CurrentZone.Center = PreviousZone.Center;
+			CurrentZone.Radius = FMath::Lerp(PreviousZone.Radius, 0.0f, Alpha);
+		}
 
 		if (CurrentZoneVisualizer)
 		{
-			CurrentZoneVisualizer->SetZone(CurrentZone.Center, CurrentZone.Radius, FColor::Red, 12.0f);
+			CurrentZoneVisualizer->SetZone(CurrentZone.Center, CurrentZone.Radius, FColor::Red, 12.0f, true);
+		}
+	}
+	else
+	{
+		// Normal phases: shrink from PreviousZone to NextZone
+		if (PhaseElapsedTime < WaitDuration)
+		{
+			CurrentZone = PreviousZone;
+		}
+		else
+		{
+			float Alpha = FMath::Clamp((PhaseElapsedTime - WaitDuration) / ShrinkDuration, 0.0f, 1.0f);
+			CurrentZone.Center = FMath::Lerp(PreviousZone.Center, NextZone.Center, Alpha);
+			CurrentZone.Radius = FMath::Lerp(PreviousZone.Radius, NextZone.Radius, Alpha);
+		}
+
+		if (CurrentZoneVisualizer)
+		{
+			CurrentZoneVisualizer->SetZone(CurrentZone.Center, CurrentZone.Radius, FColor::Green, 10.0f, true);
 		}
 	}
 
 	ApplyZoneDamage(DeltaTime);
+	UpdateWinnerState();
 
 	if (CurrentPhaseIndex < Settings.PhaseCount - 1)
 	{
@@ -81,29 +123,30 @@ void UShowdownBattleRoyaleSubsystem::ConfigureBattleRoyale(const FBattleRoyaleSe
 
 void UShowdownBattleRoyaleSubsystem::StartBattleRoyale()
 {
-	if (bBattleRoyaleActive)
+	if (bBattleRoyaleActive && !bBattleRoyaleCompleted)
 	{
 		return;
 	}
 
+	if (bBattleRoyaleCompleted)
+	{
+		ResetBattleRoyale();
+	}
+
 	bBattleRoyaleActive = true;
+	bBattleRoyaleCompleted = false;
 	bWarmUpPhase = true;
 	WarmUpTimeRemaining = 15.0f;
 	CurrentPhaseIndex = 0;
 	PhaseElapsedTime = 0.0f;
+	WinnerCharacter.Reset();
 	ClearSupplies();
-
-	// Set temporary giant safe zone during warmup to prevent visualization & damage
-	CurrentZone.Center = FVector2D(Settings.MapCenter.X, Settings.MapCenter.Y);
-	CurrentZone.Radius = 999999.0f;
-	CurrentZone.DamagePerSecond = 0.0f;
-	CurrentZone.PhaseIndex = -1;
-
-	// Temporarily destroy or hide visualizers until phase 1 starts
+	GenerateInitialZones();
 	DestroyRuntimeVisuals();
+	CreateOrUpdateZoneVisualizers();
 	CreateMinimapWidget();
 
-	UE_LOG(LogTemp, Log, TEXT("Showdown battle royale started (Warmup 15 seconds)."));
+	UE_LOG(LogTemp, Log, TEXT("Showdown battle royale started (Warmup 15 seconds, first safe zone visible)."));
 }
 
 void UShowdownBattleRoyaleSubsystem::ResetBattleRoyale()
@@ -114,10 +157,12 @@ void UShowdownBattleRoyaleSubsystem::ResetBattleRoyale()
 	}
 
 	bBattleRoyaleActive = false;
+	bBattleRoyaleCompleted = false;
 	bWarmUpPhase = false;
 	WarmUpTimeRemaining = 0.0f;
 	CurrentPhaseIndex = 0;
 	PhaseElapsedTime = 0.0f;
+	WinnerCharacter.Reset();
 	ClearSupplies();
 	DestroyRuntimeVisuals();
 }
@@ -164,6 +209,36 @@ bool UShowdownBattleRoyaleSubsystem::IsRegisteredBot(const AMyCharacter* Charact
 	return false;
 }
 
+FVector2D UShowdownBattleRoyaleSubsystem::GetCameraViewCenter() const
+{
+	if (bBattleRoyaleActive && (!bWarmUpPhase || bBattleRoyaleCompleted))
+	{
+		return CurrentZone.Center;
+	}
+
+	return FVector2D(Settings.MapCenter.X, Settings.MapCenter.Y);
+}
+
+float UShowdownBattleRoyaleSubsystem::GetCameraViewRadius() const
+{
+	if (bBattleRoyaleActive && (!bWarmUpPhase || bBattleRoyaleCompleted))
+	{
+		return CurrentZone.Radius;
+	}
+
+	return FVector2D(Settings.MapExtent.X, Settings.MapExtent.Y).Size();
+}
+
+FVector2D UShowdownBattleRoyaleSubsystem::GetCameraViewExtent() const
+{
+	if (bBattleRoyaleActive && (!bWarmUpPhase || bBattleRoyaleCompleted))
+	{
+		return FVector2D(CurrentZone.Radius, CurrentZone.Radius);
+	}
+
+	return Settings.MapExtent;
+}
+
 void UShowdownBattleRoyaleSubsystem::TryPickupSupply(ASupplyDropActor* SupplyDrop, AMyCharacter* Character)
 {
 	if (!bBattleRoyaleActive || !SupplyDrop || !Character || !IsRegisteredPlayer(Character))
@@ -178,27 +253,28 @@ void UShowdownBattleRoyaleSubsystem::TryPickupSupply(ASupplyDropActor* SupplyDro
 
 void UShowdownBattleRoyaleSubsystem::GenerateInitialZones()
 {
-	CurrentZone = GenerateZoneForPhase(0, nullptr);
-	NextZone = GenerateZoneForPhase(FMath::Min(1, Settings.PhaseCount - 1), &CurrentZone);
+	PreviousZone = GetMapZone();
+	CurrentZone = PreviousZone;
+	NextZone = GenerateZoneForPhase(0, &CurrentZone);
 }
 
-FSafeZoneState UShowdownBattleRoyaleSubsystem::GenerateZoneForPhase(int32 PhaseIndex, const FSafeZoneState* PreviousZone) const
+FSafeZoneState UShowdownBattleRoyaleSubsystem::GenerateZoneForPhase(int32 PhaseIndex, const FSafeZoneState* InPreviousZone) const
 {
 	FSafeZoneState Zone;
 	Zone.PhaseIndex = PhaseIndex;
 	Zone.Radius = GetPhaseRadius(PhaseIndex);
 	Zone.DamagePerSecond = GetPhaseDamage(PhaseIndex);
 
-	if (!PreviousZone)
+	if (!InPreviousZone)
 	{
 		Zone.Center = FVector2D(Settings.MapCenter.X, Settings.MapCenter.Y);
 		return Zone;
 	}
 
-	const float MaxOffset = FMath::Max(0.0f, PreviousZone->Radius - Zone.Radius);
+	const float MaxOffset = FMath::Max(0.0f, InPreviousZone->Radius - Zone.Radius);
 	const float Angle = FMath::FRandRange(0.0f, 2.0f * PI);
 	const float Distance = FMath::FRandRange(0.0f, MaxOffset);
-	Zone.Center = PreviousZone->Center + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Distance;
+	Zone.Center = InPreviousZone->Center + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Distance;
 
 	Zone.Center.X = FMath::Clamp(Zone.Center.X, Settings.MapCenter.X - Settings.MapExtent.X + Zone.Radius, Settings.MapCenter.X + Settings.MapExtent.X - Zone.Radius);
 	Zone.Center.Y = FMath::Clamp(Zone.Center.Y, Settings.MapCenter.Y - Settings.MapExtent.Y + Zone.Radius, Settings.MapCenter.Y + Settings.MapExtent.Y - Zone.Radius);
@@ -214,11 +290,15 @@ void UShowdownBattleRoyaleSubsystem::AdvancePhase()
 		return;
 	}
 
+	PreviousZone = NextZone;
 	++CurrentPhaseIndex;
-	CurrentZone = NextZone;
+
+	CurrentZone = PreviousZone;
 	CurrentZone.PhaseIndex = CurrentPhaseIndex;
 	CurrentZone.DamagePerSecond = GetPhaseDamage(CurrentPhaseIndex);
+
 	NextZone = GenerateZoneForPhase(FMath::Min(CurrentPhaseIndex + 1, Settings.PhaseCount - 1), &CurrentZone);
+
 	CreateOrUpdateZoneVisualizers();
 	SpawnSupplyForPhase();
 	UE_LOG(LogTemp, Log, TEXT("Advanced safe zone phase to %d."), CurrentPhaseIndex + 1);
@@ -307,11 +387,34 @@ void UShowdownBattleRoyaleSubsystem::CreateOrUpdateZoneVisualizers()
 
 	if (CurrentZoneVisualizer)
 	{
-		CurrentZoneVisualizer->SetZone(CurrentZone.Center, CurrentZone.Radius, FColor::Green, 10.0f);
+		if (bWarmUpPhase)
+		{
+			CurrentZoneVisualizer->SetZone(CurrentZone.Center, 0.0f, FColor::Green, 0.0f, false);
+		}
+		else if (CurrentPhaseIndex == Settings.PhaseCount - 1)
+		{
+			CurrentZoneVisualizer->SetZone(CurrentZone.Center, CurrentZone.Radius, FColor::Red, 12.0f, true);
+		}
+		else
+		{
+			CurrentZoneVisualizer->SetZone(CurrentZone.Center, CurrentZone.Radius, FColor::Green, 10.0f, true);
+		}
 	}
+
 	if (NextZoneVisualizer)
 	{
-		NextZoneVisualizer->SetZone(NextZone.Center, NextZone.Radius, FColor::Yellow, 4.0f);
+		if (bWarmUpPhase)
+		{
+			NextZoneVisualizer->SetZone(NextZone.Center, NextZone.Radius, FColor::Yellow, 4.0f, false);
+		}
+		else if (CurrentPhaseIndex == Settings.PhaseCount - 1)
+		{
+			NextZoneVisualizer->SetZone(NextZone.Center, 0.0f, FColor::Yellow, 0.0f, false);
+		}
+		else
+		{
+			NextZoneVisualizer->SetZone(NextZone.Center, NextZone.Radius, FColor::Yellow, 4.0f, false);
+		}
 	}
 }
 
@@ -389,6 +492,58 @@ float UShowdownBattleRoyaleSubsystem::GetPhaseDamage(int32 PhaseIndex) const
 	return DamageByPhase.IsValidIndex(PhaseIndex) ? DamageByPhase[PhaseIndex] : DamageByPhase.Last();
 }
 
+void UShowdownBattleRoyaleSubsystem::UpdateWinnerState()
+{
+	if (!bBattleRoyaleActive || bWarmUpPhase || bBattleRoyaleCompleted)
+	{
+		return;
+	}
+
+	AMyCharacter* LastAliveCharacter = nullptr;
+	int32 AliveCount = 0;
+	auto CountAliveCharacter = [&AliveCount, &LastAliveCharacter](const TWeakObjectPtr<AMyCharacter>& CharacterPtr)
+	{
+		AMyCharacter* Character = CharacterPtr.Get();
+		if (Character && Character->IsAlive())
+		{
+			++AliveCount;
+			LastAliveCharacter = Character;
+		}
+	};
+
+	for (const TPair<FString, TWeakObjectPtr<AMyCharacter>>& PlayerPair : PlayerCharactersById)
+	{
+		CountAliveCharacter(PlayerPair.Value);
+	}
+
+	for (const TPair<FString, TWeakObjectPtr<AMyCharacter>>& BotPair : BotCharactersById)
+	{
+		CountAliveCharacter(BotPair.Value);
+	}
+
+	if (AliveCount == 1)
+	{
+		CompleteBattleRoyale(LastAliveCharacter);
+	}
+}
+
+void UShowdownBattleRoyaleSubsystem::CompleteBattleRoyale(AMyCharacter* Winner)
+{
+	bBattleRoyaleCompleted = true;
+	bWarmUpPhase = false;
+	WinnerCharacter = Winner;
+
+	if (Winner)
+	{
+		Winner->SetExternalMovementEnabled(true);
+		UE_LOG(LogTemp, Log, TEXT("Showdown battle royale completed. Winner remains controllable: %s."), *Winner->GetName());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("Showdown battle royale completed without a winner."));
+	}
+}
+
 void UShowdownBattleRoyaleSubsystem::ApplyRandomEquipmentEffect(AMyCharacter* Character)
 {
 	if (!Character)
@@ -404,4 +559,14 @@ void UShowdownBattleRoyaleSubsystem::ApplyRandomEquipmentEffect(AMyCharacter* Ch
 
 	const int32 EffectIndex = FMath::RandRange(0, 2);
 	Equipment->ApplyEffect(static_cast<EBattleRoyaleEquipmentEffect>(EffectIndex));
+}
+
+FSafeZoneState UShowdownBattleRoyaleSubsystem::GetMapZone() const
+{
+	FSafeZoneState MapZone;
+	MapZone.Center = FVector2D(Settings.MapCenter.X, Settings.MapCenter.Y);
+	MapZone.Radius = FVector2D(Settings.MapExtent.X, Settings.MapExtent.Y).Size();
+	MapZone.PhaseIndex = -1;
+	MapZone.DamagePerSecond = 0.0f;
+	return MapZone;
 }

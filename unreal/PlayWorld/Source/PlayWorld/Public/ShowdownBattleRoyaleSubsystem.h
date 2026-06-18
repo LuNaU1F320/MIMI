@@ -74,23 +74,35 @@ public:
 	const TArray<TWeakObjectPtr<ASupplyDropActor>>& GetActiveSupplies() const { return ActiveSupplies; }
 	const FBattleRoyaleSettings& GetSettings() const { return Settings; }
 	bool IsBattleRoyaleActive() const { return bBattleRoyaleActive; }
+	bool IsBattleRoyaleCompleted() const { return bBattleRoyaleCompleted; }
+	bool IsWarmUpPhase() const { return bWarmUpPhase; }
+	int32 GetCurrentPhaseIndex() const { return CurrentPhaseIndex; }
 	float GetPhaseElapsedTime() const { return PhaseElapsedTime; }
+	FVector2D GetCameraViewCenter() const;
+	float GetCameraViewRadius() const;
+	FVector2D GetCameraViewExtent() const;
+	AMyCharacter* GetWinnerCharacter() const { return WinnerCharacter.Get(); }
 
 	void TryPickupSupply(ASupplyDropActor* SupplyDrop, AMyCharacter* Character);
 
 private:
+	FSafeZoneState GetMapZone() const;
+
 	FBattleRoyaleSettings Settings;
 	bool bBattleRoyaleActive = false;
+	bool bBattleRoyaleCompleted = false;
 	bool bWarmUpPhase = false;
 	float WarmUpTimeRemaining = 0.0f;
 	int32 CurrentPhaseIndex = 0;
 	float PhaseElapsedTime = 0.0f;
+	FSafeZoneState PreviousZone;
 	FSafeZoneState CurrentZone;
 	FSafeZoneState NextZone;
 
 	TMap<FString, TWeakObjectPtr<AMyCharacter>> PlayerCharactersById;
 	TMap<FString, TWeakObjectPtr<AMyCharacter>> BotCharactersById;
 	TArray<TWeakObjectPtr<ASupplyDropActor>> ActiveSupplies;
+	TWeakObjectPtr<AMyCharacter> WinnerCharacter;
 
 	UPROPERTY()
 	TObjectPtr<ASafeZoneVisualizerActor> CurrentZoneVisualizer;
@@ -104,7 +116,7 @@ private:
 	TArray<float> DamageByPhase = { 3.0f, 6.0f, 10.0f, 15.0f };
 
 	void GenerateInitialZones();
-	FSafeZoneState GenerateZoneForPhase(int32 PhaseIndex, const FSafeZoneState* PreviousZone) const;
+	FSafeZoneState GenerateZoneForPhase(int32 PhaseIndex, const FSafeZoneState* InPreviousZone) const;
 	void AdvancePhase();
 	void ApplyZoneDamage(float DeltaTime);
 	void SpawnSupplyForPhase();
@@ -116,5 +128,7 @@ private:
 	float GetInitialZoneRadius() const;
 	float GetPhaseRadius(int32 PhaseIndex) const;
 	float GetPhaseDamage(int32 PhaseIndex) const;
+	void UpdateWinnerState();
+	void CompleteBattleRoyale(AMyCharacter* Winner);
 	void ApplyRandomEquipmentEffect(AMyCharacter* Character);
 };

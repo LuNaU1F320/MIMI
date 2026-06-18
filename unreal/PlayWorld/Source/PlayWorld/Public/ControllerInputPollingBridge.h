@@ -1,13 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ControllerInputBridgeSubsystem.h"
 #include "GameFramework/Actor.h"
-#include "HttpFwd.h"
-#include "IWebSocket.h"
-#include "ShowdownBattleRoyaleSubsystem.h"
-#include "TimerManager.h"
 #include "ControllerInputPollingBridge.generated.h"
 
+class ABattleRoyaleZoneCameraActor;
 class AMyCharacter;
 
 UCLASS()
@@ -64,6 +62,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale")
 	FBattleRoyaleSettings BattleRoyaleSettings;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Camera")
+	TSubclassOf<ABattleRoyaleZoneCameraActor> ZoneCameraClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Camera")
+	TObjectPtr<ABattleRoyaleZoneCameraActor> ZoneCameraActor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Camera")
+	bool bAutoCreateZoneCamera = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Camera")
+	bool bAutoActivateZoneCamera = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale", meta = (ClampMin = "0.1"))
 	float StatusPollingInterval = 0.5f;
 
@@ -71,46 +81,5 @@ protected:
 	float WorldStateSyncInterval = 0.1f;
 
 private:
-	FTimerHandle PollingTimerHandle;
-	FTimerHandle StatusPollingTimerHandle;
-	FTimerHandle WorldStateSyncTimerHandle;
-	bool bRequestInFlight = false;
-	bool bStatusRequestInFlight = false;
-	bool bWorldStateRequestInFlight = false;
-	float LastDebugLogTime = -1000.0f;
-
-	UPROPERTY()
-	TArray<TObjectPtr<AMyCharacter>> SpawnedBots;
-
-	UPROPERTY()
-	TArray<TObjectPtr<AMyCharacter>> DemoPlayerCharacters;
-
-	UPROPERTY()
-	TArray<TObjectPtr<AMyCharacter>> DemoBotCharacters;
-
-	TMap<FString, TObjectPtr<AMyCharacter>> PlayerCharactersById;
-	TMap<FString, TObjectPtr<AMyCharacter>> BotCharactersById;
-	TMap<FString, FVector2D> PlayerInitialPercentageMap;
-	TSharedPtr<IWebSocket> UnrealWebSocket;
-	void HandleWebSocketMessage(const FString& MessageString);
-
-	void InitializeDemoCharacters();
-	void PollInputs();
-	void PollStatus();
-	void SendWorldState();
-	void HandleInputResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
-	void HandleStatusResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
-	void HandleWorldStateResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
-	void ApplyMoveInput(const FString& PlayerId, float MoveX, float MoveY);
-	void ApplyBotMoveInput(const FString& BotId, float MoveX, float MoveY);
-	void StopDemoCharacters();
-	AMyCharacter* FindExistingCharacter() const;
-	AMyCharacter* SpawnCharacterAt(const FVector& Location, const FRotator& Rotation, const TCHAR* NamePrefix) const;
-	AMyCharacter* GetOrCreatePlayerCharacter(const FString& PlayerId);
-	AMyCharacter* GetOrCreateBotCharacter(const FString& BotId);
-	FVector GetPlayerSpawnLocation(int32 PlayerIndex) const;
-	void SpawnStaticBots();
-	FVector GetRandomBotSpawnLocation(FRandomStream& RandomStream, const TArray<FVector>& ExistingLocations) const;
-	bool IsFarEnoughFromExistingBots(const FVector& CandidateLocation, const TArray<FVector>& ExistingLocations) const;
-	UShowdownBattleRoyaleSubsystem* GetBattleRoyaleSubsystem() const;
+	FControllerInputBridgeSettings MakeBridgeSettings() const;
 };

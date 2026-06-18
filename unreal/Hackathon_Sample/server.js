@@ -26,6 +26,11 @@ function sendToUnreal(payload) {
   }
 }
 
+function canAcceptPlayerInput(playerId) {
+  if (gameState === 'Playing') return true;
+  return gameState === 'Result' && winner && winner.playerId === playerId;
+}
+
 function getLocalIpAddress() {
   const interfaces = os.networkInterfaces();
   for (const devName in interfaces) {
@@ -318,8 +323,8 @@ app.post('/api/input', (req, res) => {
     return res.status(404).json({ success: false, reason: 'Player not found' });
   }
 
-  if (gameState !== 'Playing') {
-    return res.status(400).json({ success: false, reason: 'Game is not in Playing state' });
+  if (!canAcceptPlayerInput(playerId)) {
+    return res.status(400).json({ success: false, reason: 'Player input is not accepted in current game state' });
   }
 
   players[playerId].x = Number(moveX) || 0;
@@ -773,7 +778,7 @@ io.on('connection', (socket) => {
   // Receive player movement input
   socket.on('moveInput', ({ moveX, moveY }) => {
     if (!socketPlayerId || !players[socketPlayerId]) return;
-    if (gameState !== 'Playing') return;
+    if (!canAcceptPlayerInput(socketPlayerId)) return;
 
     players[socketPlayerId].x = Number(moveX) || 0;
     players[socketPlayerId].y = Number(moveY) || 0;
