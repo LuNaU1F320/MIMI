@@ -26,6 +26,14 @@ public class GameService {
   private long lastUnrealPositionAt = 0;
   private long nextPlayerNumber = 1;
   private static final double UNREAL_MAP_HALF_SIZE = 3000.0;
+  private static final long STALE_INPUT_TIMEOUT_MS = 500;
+  private static final long DISCONNECTED_PLAYER_CLEANUP_MS = 30_000;
+  private static final double PREVIEW_MOVE_SPEED = 1.0;
+  private static final double BOT_DIRECTION_CHANGE_CHANCE = 0.12;
+  private static final double BOT_BOUNDARY_MARGIN = 8.0;
+  private static final String[] BOT_NAMES = {
+      "토끼", "호랑이", "사자", "곰", "여우", "늑대", "독수리", "부엉이", "람쥐", "거북이"
+  };
   private static final String[] PLAYER_COLORS = {
       "#a8e6cf", "#a8d8ea", "#ffaaa6", "#ffd3b6", "#dcedc1", "#c7ceea",
       "#f6c1ff", "#f9f7a1", "#b5ead7", "#ffdac1", "#e2f0cb", "#b5b9ff"
@@ -46,6 +54,7 @@ public class GameService {
   }
 
   public synchronized Player createPlayer(String nickname) {
+    cleanupDisconnectedPlayers();
     Player player = new Player();
     player.participantId = (int) nextPlayerNumber++;
     player.playerId = Integer.toString(player.participantId);
@@ -54,6 +63,7 @@ public class GameService {
     player.state = (gameState.equals("Lobby") || gameState.equals("Shop")) ? "Joined" : "Spectator";
     player.connected = true;
     player.joinedAt = System.currentTimeMillis();
+    player.disconnectedAt = 0;
     player.inputTimestamp = player.joinedAt;
     player.posX = randomPosition();
     player.posY = randomPosition();
@@ -67,6 +77,12 @@ public class GameService {
 
   public synchronized Player createBot(String nickname, String playerId) {
     Player player = createPlayer(nickname);
+    String originalPlayerId = player.playerId;
+    String botPlayerId = playerId == null || playerId.isBlank() ? "bot_" + player.participantId : playerId;
+    players.remove(originalPlayerId);
+    player.playerId = botPlayerId;
+    players.put(player.playerId, player);
+    player.nickname = nickname.trim().substring(0, Math.min(16, nickname.trim().length()));
     player.isBot = true;
     if (gameState.equals("Playing")) {
       player.state = "Alive";
@@ -78,12 +94,27 @@ public class GameService {
     return player;
   }
 
+  public synchronized Player createRandomBot() {
+    String animal = BOT_NAMES[ThreadLocalRandom.current().nextInt(BOT_NAMES.length)];
+    int number = ThreadLocalRandom.current().nextInt(100);
+    return createBot("[BOT] " + animal + number, null);
+  }
+
   public synchronized Player rejoin(String playerId) {
     Player player = players.get(playerId);
     if (player != null) {
       player.connected = true;
+      player.disconnectedAt = 0;
     }
     return player;
+  }
+
+  public synchronized boolean removePreviousDisconnectedPlayer(String playerId) {
+    if (playerId == null || playerId.isBlank()) return false;
+    Player player = players.get(playerId);
+    if (player == null || player.isBot || player.connected) return false;
+    players.remove(playerId);
+    return true;
   }
 
   public synchronized Player getPlayer(String playerId) {
@@ -97,7 +128,7 @@ public class GameService {
   public synchronized Player updateInput(String playerId, double moveX, double moveY, Long jumpSeq, Long emoteSeq) {
     Player player = players.get(playerId);
     if (player == null || !gameState.equals("Playing")) {
-      return player;
+      return null;
     }
 
     double normalizedX = clampAxis(moveX);
@@ -148,6 +179,7 @@ public class GameService {
 
   public synchronized void resetGame() {
     gameState = "Lobby";
+    lastUnrealPositionAt = 0;
     ranking.clear();
     winner = null;
     resultSaved = false;
@@ -219,6 +251,7 @@ public class GameService {
     }
 
     gameState = "Result";
+    resetAllInputs();
     saveResultOnce();
   }
 
@@ -309,8 +342,9 @@ public class GameService {
     if (player == null) return;
 
     player.connected = false;
+    player.disconnectedAt = System.currentTimeMillis();
     resetInput(player);
-    if (gameState.equals("Lobby")) {
+    if (!gameState.equals("Playing")) {
       players.remove(playerId);
     }
   }
@@ -356,13 +390,18 @@ public class GameService {
   }
 
   public synchronized List<Map<String, Object>> unrealInputs() {
+    long now = System.currentTimeMillis();
     return players.values().stream()
+        .filter(player -> player.state.equals("Alive"))
         .map(player -> {
           Map<String, Object> dto = new LinkedHashMap<>();
+          boolean staleHumanInput = !player.isBot
+              && player.state.equals("Alive")
+              && now - player.inputTimestamp > STALE_INPUT_TIMEOUT_MS;
           dto.put("participantId", player.participantId);
           dto.put("playerId", player.playerId);
-          dto.put("moveX", player.moveX);
-          dto.put("moveY", player.moveY);
+          dto.put("moveX", staleHumanInput ? 0 : player.moveX);
+          dto.put("moveY", staleHumanInput ? 0 : player.moveY);
           dto.put("jumpSeq", player.jumpSeq);
           dto.put("emoteSeq", player.emoteSeq);
           dto.put("timestamp", player.inputTimestamp);
@@ -382,7 +421,9 @@ public class GameService {
           Math.round(player.posY * 10.0) / 10.0,
           player.state.equals("Alive") ? 1.0 : 0.0,
           Math.round(player.hp * 10.0) / 10.0,
-          Math.round(player.maxHp * 10.0) / 10.0
+          Math.round(player.maxHp * 10.0) / 10.0,
+          Math.round(player.worldX * 10.0) / 10.0,
+          Math.round(player.worldY * 10.0) / 10.0
       ));
     }
     return positions;
@@ -405,7 +446,9 @@ public class GameService {
             Math.round(player.posY * 10.0) / 10.0,
             player.state.equals("Alive") ? 1.0 : 0.0,
             Math.round(player.hp * 10.0) / 10.0,
-            Math.round(player.maxHp * 10.0) / 10.0
+            Math.round(player.maxHp * 10.0) / 10.0,
+            Math.round(player.worldX * 10.0) / 10.0,
+            Math.round(player.worldY * 10.0) / 10.0
         ));
       }
     }
@@ -413,16 +456,22 @@ public class GameService {
     return positions;
   }
 
-  public synchronized int updateUnrealPositions(List<Map<String, Object>> positionUpdates) {
-    if (positionUpdates == null) return 0;
+  public record UnrealPositionUpdateResult(int updatedCount, boolean stateChanged, List<Player> newlyDeadPlayers) {
+  }
+
+  public synchronized UnrealPositionUpdateResult updateUnrealPositions(List<Map<String, Object>> positionUpdates) {
+    if (positionUpdates == null) return new UnrealPositionUpdateResult(0, false, List.of());
 
     int updatedCount = 0;
+    boolean stateChanged = false;
+    List<Player> newlyDeadPlayers = new ArrayList<>();
     for (Map<String, Object> update : positionUpdates) {
       Object playerIdValue = update.containsKey("playerId") ? update.get("playerId") : update.get("participantId");
       if (playerIdValue == null) continue;
 
       Player player = players.get(String.valueOf(playerIdValue));
       if (player == null) continue;
+      String oldState = player.state;
 
       Object worldXValue = update.get("worldX");
       Object worldYValue = update.get("worldY");
@@ -440,14 +489,23 @@ public class GameService {
       player.hp = Math.max(0, asDouble(update.get("hp"), player.hp));
       player.maxHp = Math.max(1, asDouble(update.get("maxHp"), player.maxHp));
 
-      Object aliveValue = update.get("alive");
-      if (aliveValue instanceof Boolean alive && !alive && player.state.equals("Alive")) {
-        applyPlayerState(player.playerId, "Dead");
+      if (gameState.equals("Playing")) {
+        Object aliveValue = update.get("alive");
+        Object stateValue = update.get("state");
+        if (stateValue != null && !String.valueOf(stateValue).isBlank()) {
+          applyPlayerState(player.playerId, String.valueOf(stateValue));
+        } else if ((aliveValue instanceof Boolean alive && !alive) || player.hp <= 0) {
+          applyPlayerState(player.playerId, "Dead");
+        } else if (!player.state.equals("Dead") && !player.state.equals("Winner") && !player.state.equals("Alive")) {
+          applyPlayerState(player.playerId, "Alive");
+        }
       }
 
-      Object stateValue = update.get("state");
-      if (stateValue != null && !String.valueOf(stateValue).isBlank()) {
-        applyPlayerState(player.playerId, String.valueOf(stateValue));
+      if (!oldState.equals(player.state)) {
+        stateChanged = true;
+        if (player.state.equals("Dead")) {
+          newlyDeadPlayers.add(player);
+        }
       }
 
       updatedCount += 1;
@@ -457,31 +515,42 @@ public class GameService {
       lastUnrealPositionAt = System.currentTimeMillis();
     }
 
-    return updatedCount;
+    return new UnrealPositionUpdateResult(updatedCount, stateChanged, newlyDeadPlayers);
   }
 
   public synchronized void tickPreviewPhysics() {
+    tickPreviewPhysics(true);
+  }
+
+  public synchronized void tickPreviewPhysics(boolean allowPositionPreview) {
     if (!gameState.equals("Playing")) return;
+
+    expireStaleHumanInputs();
 
     for (Player player : players.values()) {
       if (!player.state.equals("Alive")) continue;
 
-      if (player.isBot && ThreadLocalRandom.current().nextDouble() < 0.25) {
-        double angle = ThreadLocalRandom.current().nextDouble() * Math.PI * 2;
-        boolean isMoving = ThreadLocalRandom.current().nextDouble() < 0.85;
-        updateInput(player.playerId, isMoving ? Math.cos(angle) : 0, isMoving ? Math.sin(angle) : 0);
+      if (player.isBot) {
+        updateBotMovement(player);
       }
     }
 
+    if (!allowPositionPreview) return;
     if (System.currentTimeMillis() - lastUnrealPositionAt < 1000) return;
 
     for (Player player : players.values()) {
       if (!player.state.equals("Alive")) continue;
 
       if (player.moveX != 0 || player.moveY != 0) {
-        player.posX = Math.max(2, Math.min(98, player.posX + player.moveX * 0.8));
-        player.posY = Math.max(2, Math.min(98, player.posY - player.moveY * 0.8));
+        player.posX = Math.max(2, Math.min(98, player.posX + player.moveX * PREVIEW_MOVE_SPEED));
+        player.posY = Math.max(2, Math.min(98, player.posY - player.moveY * PREVIEW_MOVE_SPEED));
       }
+    }
+  }
+
+  public synchronized void resetAllInputs() {
+    for (Player player : players.values()) {
+      resetInput(player);
     }
   }
 
@@ -496,9 +565,11 @@ public class GameService {
       winner = alivePlayers.get(0);
       winner.state = "Winner";
       gameState = "Result";
+      resetAllInputs();
       saveResultOnce();
     } else if (alivePlayers.isEmpty()) {
       gameState = "Result";
+      resetAllInputs();
       saveResultOnce();
     }
   }
@@ -520,6 +591,74 @@ public class GameService {
     player.jumpSeq = 0;
     player.emoteSeq = 0;
     player.inputTimestamp = System.currentTimeMillis();
+  }
+
+  private void resetMovement(Player player) {
+    player.x = 0;
+    player.y = 0;
+    player.moveX = 0;
+    player.moveY = 0;
+  }
+
+  private void updateBotMovement(Player player) {
+    boolean hasNoDirection = player.moveX == 0 && player.moveY == 0;
+    boolean nearBoundary = player.posX < BOT_BOUNDARY_MARGIN
+        || player.posX > 100 - BOT_BOUNDARY_MARGIN
+        || player.posY < BOT_BOUNDARY_MARGIN
+        || player.posY > 100 - BOT_BOUNDARY_MARGIN;
+    boolean shouldTurn = hasNoDirection
+        || nearBoundary
+        || ThreadLocalRandom.current().nextDouble() < BOT_DIRECTION_CHANGE_CHANCE;
+
+    if (!shouldTurn) {
+      player.inputTimestamp = System.currentTimeMillis();
+      return;
+    }
+
+    double angle = ThreadLocalRandom.current().nextDouble() * Math.PI * 2;
+    double moveX = Math.cos(angle);
+    double moveY = Math.sin(angle);
+
+    if (player.posX < BOT_BOUNDARY_MARGIN) moveX = Math.abs(moveX);
+    if (player.posX > 100 - BOT_BOUNDARY_MARGIN) moveX = -Math.abs(moveX);
+    if (player.posY < BOT_BOUNDARY_MARGIN) moveY = -Math.abs(moveY);
+    if (player.posY > 100 - BOT_BOUNDARY_MARGIN) moveY = Math.abs(moveY);
+
+    double length = Math.hypot(moveX, moveY);
+    if (length <= 0) {
+      moveX = 1;
+      moveY = 0;
+    } else {
+      moveX /= length;
+      moveY /= length;
+    }
+
+    updateInput(player.playerId, moveX, moveY);
+  }
+
+  private void expireStaleHumanInputs() {
+    long now = System.currentTimeMillis();
+    for (Player player : players.values()) {
+      if (player.isBot || !player.state.equals("Alive")) continue;
+      if ((player.moveX != 0 || player.moveY != 0) && now - player.inputTimestamp > STALE_INPUT_TIMEOUT_MS) {
+        resetMovement(player);
+      }
+    }
+  }
+
+  private void cleanupDisconnectedPlayers() {
+    long now = System.currentTimeMillis();
+    List<String> stalePlayerIds = players.values().stream()
+        .filter(player -> !player.isBot)
+        .filter(player -> !player.connected)
+        .filter(player -> player.disconnectedAt > 0)
+        .filter(player -> {
+          if (!gameState.equals("Playing")) return true;
+          return now - player.disconnectedAt >= DISCONNECTED_PLAYER_CLEANUP_MS;
+        })
+        .map(player -> player.playerId)
+        .toList();
+    stalePlayerIds.forEach(players::remove);
   }
 
   private void resetStats(Player player) {

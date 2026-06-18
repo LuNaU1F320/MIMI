@@ -5,9 +5,11 @@
     const handlers = {};
     const pendingCallbacks = {};
     const ACK_TIMEOUT_MS = 8000;
+    const HEARTBEAT_INTERVAL_MS = 15000;
     let requestCounter = 0;
     let connected = false;
     let socket = null;
+    let heartbeatTimer = null;
 
     function trigger(event, payload) {
       (handlers[event] || []).forEach(handler => handler(payload));
@@ -18,11 +20,13 @@
 
       socket.addEventListener('open', () => {
         connected = true;
+        startHeartbeat();
         trigger('connect');
       });
 
       socket.addEventListener('close', () => {
         connected = false;
+        stopHeartbeat();
         Object.keys(pendingCallbacks).forEach(requestId => {
           pendingCallbacks[requestId].callback({ success: false, reason: '서버 연결이 끊겼습니다.' });
           clearTimeout(pendingCallbacks[requestId].timer);
@@ -51,6 +55,22 @@
 
         trigger(message.event, message.payload);
       });
+    }
+
+    function startHeartbeat() {
+      stopHeartbeat();
+      heartbeatTimer = setInterval(() => {
+        if (connected && socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ event: '__ping', payload: { clientTime: Date.now() } }));
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
     }
 
     connect();

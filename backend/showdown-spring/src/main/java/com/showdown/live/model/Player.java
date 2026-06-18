@@ -31,6 +31,7 @@ public class Player {
   public double shield = 0;
   public boolean connected;
   public long joinedAt;
+  public long disconnectedAt;
   public long inputTimestamp;
   public boolean isBot;
 }

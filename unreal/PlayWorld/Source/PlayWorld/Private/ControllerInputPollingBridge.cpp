@@ -22,6 +22,7 @@ void AControllerInputPollingBridge::BeginPlay()
 {
 	Super::BeginPlay();
 
+	bShuttingDown = false;
 	InitializeDemoCharacters();
 
 	if (UWorld* World = GetWorld())
@@ -31,33 +32,7 @@ void AControllerInputPollingBridge::BeginPlay()
 			BattleRoyaleSubsystem->ConfigureBattleRoyale(BattleRoyaleSettings);
 		}
 
-		// Initialize WebSocket Connection
-		FWebSocketsModule& WebSocketsModule = FWebSocketsModule::Get();
-		FString BaseWsUrl = ServerBaseUrl;
-		BaseWsUrl.ReplaceInline(TEXT("http://"), TEXT("ws://"));
-		BaseWsUrl.ReplaceInline(TEXT("https://"), TEXT("wss://"));
-		BaseWsUrl.RemoveFromEnd(TEXT("/"));
-
-		UnrealWebSocket = WebSocketsModule.CreateWebSocket(FString::Printf(TEXT("%s/ws/unreal"), *BaseWsUrl), TEXT("ws"));
-
-		UnrealWebSocket->OnConnected().AddLambda([this]()
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[Unreal WS] Connected to backend WebSocket."));
-		});
-
-		UnrealWebSocket->OnConnectionError().AddLambda([](const FString& Error)
-		{
-			UE_LOG(LogTemp, Error, TEXT("[Unreal WS] Connection Error: %s"), *Error);
-		});
-
-		UnrealWebSocket->OnClosed().AddLambda([](int32 StatusCode, const FString& Reason, bool bWasClean)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[Unreal WS] Connection Closed: %s"), *Reason);
-		});
-
-		UnrealWebSocket->OnMessage().AddUObject(this, &AControllerInputPollingBridge::HandleWebSocketMessage);
-
-		UnrealWebSocket->Connect();
+		ConnectWebSocket();
 
 		// Keep only the World State Sync Timer (sends Unreal character states to server)
 		World->GetTimerManager().SetTimer(
@@ -69,16 +44,101 @@ void AControllerInputPollingBridge::BeginPlay()
 	}
 }
 
-void AControllerInputPollingBridge::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void AControllerInputPollingBridge::ConnectWebSocket()
 {
+	if (bShuttingDown)
+	{
+		return;
+	}
+
 	if (UnrealWebSocket.IsValid() && UnrealWebSocket->IsConnected())
 	{
-		UnrealWebSocket->Close();
+		return;
+	}
+
+	FWebSocketsModule& WebSocketsModule = FWebSocketsModule::Get();
+	FString BaseWsUrl = ServerBaseUrl;
+	BaseWsUrl.ReplaceInline(TEXT("http://"), TEXT("ws://"));
+	BaseWsUrl.ReplaceInline(TEXT("https://"), TEXT("wss://"));
+	BaseWsUrl.RemoveFromEnd(TEXT("/"));
+
+	UE_LOG(LogTemp, Warning, TEXT("[Unreal WS] Connecting to %s/ws/unreal"), *BaseWsUrl);
+	UnrealWebSocket = WebSocketsModule.CreateWebSocket(FString::Printf(TEXT("%s/ws/unreal"), *BaseWsUrl), TEXT("ws"));
+
+	UnrealWebSocket->OnConnected().AddLambda([this]()
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(WebSocketReconnectTimerHandle);
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[Unreal WS] Connected to backend WebSocket."));
+	});
+
+	UnrealWebSocket->OnConnectionError().AddLambda([this](const FString& Error)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Unreal WS] Connection Error: %s"), *Error);
+		if (bShuttingDown || IsActorBeingDestroyed())
+		{
+			return;
+		}
+		StopDemoCharacters();
+		ScheduleWebSocketReconnect();
+	});
+
+	UnrealWebSocket->OnClosed().AddLambda([this](int32 StatusCode, const FString& Reason, bool bWasClean)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Unreal WS] Connection Closed: %s"), *Reason);
+		if (bShuttingDown || IsActorBeingDestroyed())
+		{
+			return;
+		}
+		StopDemoCharacters();
+		ScheduleWebSocketReconnect();
+	});
+
+	UnrealWebSocket->OnMessage().AddUObject(this, &AControllerInputPollingBridge::HandleWebSocketMessage);
+	UnrealWebSocket->Connect();
+}
+
+void AControllerInputPollingBridge::ScheduleWebSocketReconnect()
+{
+	if (bShuttingDown)
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(WebSocketReconnectTimerHandle);
+		World->GetTimerManager().SetTimer(
+			WebSocketReconnectTimerHandle,
+			this,
+			&AControllerInputPollingBridge::ConnectWebSocket,
+			1.0f,
+			false);
+	}
+}
+
+void AControllerInputPollingBridge::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	bShuttingDown = true;
+	if (UnrealWebSocket.IsValid())
+	{
+		UnrealWebSocket->OnConnected().Clear();
+		UnrealWebSocket->OnConnectionError().Clear();
+		UnrealWebSocket->OnClosed().Clear();
+		UnrealWebSocket->OnMessage().Clear();
+		if (UnrealWebSocket->IsConnected())
+		{
+			UnrealWebSocket->Close();
+		}
+		UnrealWebSocket.Reset();
 	}
 
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(WorldStateSyncTimerHandle);
+		World->GetTimerManager().ClearTimer(WebSocketReconnectTimerHandle);
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -349,6 +409,9 @@ void AControllerInputPollingBridge::HandleInputResponse(FHttpRequestPtr Request,
 			continue;
 		}
 
+		bool bIsBot = PlayerId.StartsWith(TEXT("bot_"));
+		InputObject->TryGetBoolField(TEXT("isBot"), bIsBot);
+
 		double MoveX = 0.0;
 		double MoveY = 0.0;
 		if (InputObject->TryGetNumberField(TEXT("moveX"), MoveX) && InputObject->TryGetNumberField(TEXT("moveY"), MoveY))
@@ -358,7 +421,7 @@ void AControllerInputPollingBridge::HandleInputResponse(FHttpRequestPtr Request,
 				++NonZeroInputCount;
 			}
 
-			if (PlayerId.StartsWith(TEXT("bot_")))
+			if (bIsBot)
 			{
 				if (AppliedBotCount >= MaxDemoBots)
 				{
@@ -440,11 +503,37 @@ void AControllerInputPollingBridge::ApplyBotMoveInput(const FString& BotId, floa
 
 void AControllerInputPollingBridge::StopDemoCharacters()
 {
+	if (bShuttingDown || IsActorBeingDestroyed())
+	{
+		return;
+	}
+
+	for (const TObjectPtr<AMyCharacter>& DemoPlayerCharacter : DemoPlayerCharacters)
+	{
+		AMyCharacter* Character = DemoPlayerCharacter.Get();
+		if (IsValid(Character) && !Character->IsActorBeingDestroyed())
+		{
+			Character->SetMoveInput(0.0f, 0.0f);
+		}
+	}
+
+	for (const TObjectPtr<AMyCharacter>& DemoBotCharacter : DemoBotCharacters)
+	{
+		AMyCharacter* Character = DemoBotCharacter.Get();
+		if (IsValid(Character) && !Character->IsActorBeingDestroyed())
+		{
+			Character->SetMoveInput(0.0f, 0.0f);
+		}
+	}
+}
+
+void AControllerInputPollingBridge::ResetDemoCharactersForNextRound()
+{
 	for (const TObjectPtr<AMyCharacter>& DemoPlayerCharacter : DemoPlayerCharacters)
 	{
 		if (DemoPlayerCharacter.Get())
 		{
-			DemoPlayerCharacter->SetMoveInput(0.0f, 0.0f);
+			DemoPlayerCharacter->ResetForNextRound();
 		}
 	}
 
@@ -452,9 +541,32 @@ void AControllerInputPollingBridge::StopDemoCharacters()
 	{
 		if (DemoBotCharacter.Get())
 		{
-			DemoBotCharacter->SetMoveInput(0.0f, 0.0f);
+			DemoBotCharacter->ResetForNextRound();
 		}
 	}
+}
+
+void AControllerInputPollingBridge::ClearBotCharactersForReset()
+{
+	for (const TObjectPtr<AMyCharacter>& DemoBotCharacter : DemoBotCharacters)
+	{
+		if (DemoBotCharacter.Get())
+		{
+			DemoBotCharacter->Destroy();
+		}
+	}
+
+	for (const TObjectPtr<AMyCharacter>& SpawnedBot : SpawnedBots)
+	{
+		if (SpawnedBot.Get())
+		{
+			SpawnedBot->Destroy();
+		}
+	}
+
+	DemoBotCharacters.Reset();
+	SpawnedBots.Reset();
+	BotCharactersById.Reset();
 }
 
 AMyCharacter* AControllerInputPollingBridge::FindExistingCharacter() const
@@ -533,11 +645,11 @@ AMyCharacter* AControllerInputPollingBridge::GetOrCreatePlayerCharacter(const FS
 		{
 			float WorldY = (InitialPercent->X / 100.0f) * 6000.0f - 3000.0f;
 			float WorldX = ((100.0f - InitialPercent->Y) / 100.0f) * 6000.0f - 3000.0f;
-			SpawnLoc = FVector(WorldX, WorldY, 0.0f);
+			SpawnLoc = WithResolvedSpawnZ(FVector(WorldX, WorldY, 0.0f));
 		}
 		else
 		{
-			SpawnLoc = GetPlayerSpawnLocation(PlayerIndex);
+			SpawnLoc = WithResolvedSpawnZ(GetPlayerSpawnLocation(PlayerIndex));
 		}
 		PlayerCharacter = SpawnCharacterAt(SpawnLoc, FRotator::ZeroRotator, TEXT("DemoPlayer"));
 	}
@@ -572,12 +684,12 @@ AMyCharacter* AControllerInputPollingBridge::GetOrCreateBotCharacter(const FStri
 	}
 
 	FVector SpawnLoc;
-	if (FVector2D* InitialPercent = PlayerInitialPercentageMap.Find(BotId))
-	{
-		float WorldY = (InitialPercent->X / 100.0f) * 6000.0f - 3000.0f;
-		float WorldX = ((100.0f - InitialPercent->Y) / 100.0f) * 6000.0f - 3000.0f;
-		SpawnLoc = FVector(WorldX, WorldY, 0.0f);
-	}
+		if (FVector2D* InitialPercent = PlayerInitialPercentageMap.Find(BotId))
+		{
+			float WorldY = (InitialPercent->X / 100.0f) * 6000.0f - 3000.0f;
+			float WorldX = ((100.0f - InitialPercent->Y) / 100.0f) * 6000.0f - 3000.0f;
+			SpawnLoc = WithResolvedSpawnZ(FVector(WorldX, WorldY, 0.0f));
+		}
 	else
 	{
 		FRandomStream RandomStream;
@@ -592,7 +704,7 @@ AMyCharacter* AControllerInputPollingBridge::GetOrCreateBotCharacter(const FStri
 				ExistingBotLocations.Add(DemoBotCharacter->GetActorLocation());
 			}
 		}
-		SpawnLoc = GetRandomBotSpawnLocation(RandomStream, ExistingBotLocations);
+		SpawnLoc = WithResolvedSpawnZ(GetRandomBotSpawnLocation(RandomStream, ExistingBotLocations));
 	}
 
 	AMyCharacter* BotCharacter = SpawnCharacterAt(SpawnLoc, FRotator::ZeroRotator, TEXT("WebBot"));
@@ -619,6 +731,20 @@ FVector AControllerInputPollingBridge::GetPlayerSpawnLocation(int32 PlayerIndex)
 	return PlayerSpawnLocation + FVector(Column * PlayerSpawnSpacing.X, Row * PlayerSpawnSpacing.Y, 0.0f);
 }
 
+FVector AControllerInputPollingBridge::WithResolvedSpawnZ(const FVector& Location) const
+{
+	FVector ResolvedLocation = Location;
+	if (ControlledCharacter)
+	{
+		ResolvedLocation.Z = ControlledCharacter->GetActorLocation().Z;
+	}
+	else
+	{
+		ResolvedLocation.Z = PlayerSpawnLocation.Z;
+	}
+	return ResolvedLocation;
+}
+
 void AControllerInputPollingBridge::SpawnStaticBots()
 {
 	if (BotCount <= 0)
@@ -633,7 +759,7 @@ void AControllerInputPollingBridge::SpawnStaticBots()
 
 	for (int32 Index = 0; Index < BotCount; ++Index)
 	{
-		const FVector SpawnLocation = GetRandomBotSpawnLocation(RandomStream, SpawnLocations);
+		const FVector SpawnLocation = WithResolvedSpawnZ(GetRandomBotSpawnLocation(RandomStream, SpawnLocations));
 		const FVector LookTarget = ControlledCharacter ? ControlledCharacter->GetActorLocation() : BotSpawnCenter;
 		const FRotator SpawnRotation = (LookTarget - SpawnLocation).Rotation();
 
@@ -718,8 +844,12 @@ void AControllerInputPollingBridge::HandleWebSocketMessage(const FString& Messag
 		const TArray<TSharedPtr<FJsonValue>>* Inputs = nullptr;
 		if (!RootObject->TryGetArrayField(TEXT("inputs"), Inputs) || !Inputs || Inputs->Num() == 0)
 		{
+			StopDemoCharacters();
 			return;
 		}
+
+		bool bFullSnapshot = false;
+		RootObject->TryGetBoolField(TEXT("fullSnapshot"), bFullSnapshot);
 
 		TSet<FString> SeenPlayerIds;
 		TSet<FString> SeenBotIds;
@@ -746,11 +876,14 @@ void AControllerInputPollingBridge::HandleWebSocketMessage(const FString& Messag
 				continue;
 			}
 
+			bool bIsBot = PlayerId.StartsWith(TEXT("bot_"));
+			InputObject->TryGetBoolField(TEXT("isBot"), bIsBot);
+
 			double MoveX = 0.0;
 			double MoveY = 0.0;
 			if (InputObject->TryGetNumberField(TEXT("moveX"), MoveX) && InputObject->TryGetNumberField(TEXT("moveY"), MoveY))
 			{
-				if (PlayerId.StartsWith(TEXT("bot_")))
+				if (bIsBot)
 				{
 					if (AppliedBotCount >= MaxDemoBots)
 					{
@@ -772,6 +905,25 @@ void AControllerInputPollingBridge::HandleWebSocketMessage(const FString& Messag
 				}
 			}
 		}
+
+		if (bFullSnapshot)
+		{
+			for (const TPair<FString, TObjectPtr<AMyCharacter>>& PlayerPair : PlayerCharactersById)
+			{
+				if (!SeenPlayerIds.Contains(PlayerPair.Key) && PlayerPair.Value)
+				{
+					PlayerPair.Value->SetMoveInput(0.0f, 0.0f);
+				}
+			}
+
+			for (const TPair<FString, TObjectPtr<AMyCharacter>>& BotPair : BotCharactersById)
+			{
+				if (!SeenBotIds.Contains(BotPair.Key) && BotPair.Value)
+				{
+					BotPair.Value->SetMoveInput(0.0f, 0.0f);
+				}
+			}
+		}
 	}
 	else if (MsgType.Equals(TEXT("gameStateChanged"), ESearchCase::IgnoreCase))
 	{
@@ -782,6 +934,7 @@ void AControllerInputPollingBridge::HandleWebSocketMessage(const FString& Messag
 			const TArray<TSharedPtr<FJsonValue>>* PlayersArray = nullptr;
 			if (RootObject->TryGetArrayField(TEXT("players"), PlayersArray) && PlayersArray)
 			{
+				UE_LOG(LogTemp, Warning, TEXT("[Showdown] gameStateChanged=%s players=%d"), *GameState, PlayersArray->Num());
 				for (const TSharedPtr<FJsonValue>& PlayerValue : *PlayersArray)
 				{
 					const TSharedPtr<FJsonObject> PlayerObject = PlayerValue.IsValid() ? PlayerValue->AsObject() : nullptr;
@@ -792,12 +945,14 @@ void AControllerInputPollingBridge::HandleWebSocketMessage(const FString& Messag
 						double PosY = 50.0;
 						if (PlayerObject->TryGetStringField(TEXT("playerId"), PlayerId))
 						{
+							bool bIsBot = PlayerId.StartsWith(TEXT("bot_"));
+							PlayerObject->TryGetBoolField(TEXT("isBot"), bIsBot);
 							PlayerObject->TryGetNumberField(TEXT("posX"), PosX);
 							PlayerObject->TryGetNumberField(TEXT("posY"), PosY);
 							PlayerInitialPercentageMap.FindOrAdd(PlayerId) = FVector2D(PosX, PosY);
 
 							// Spawn characters/bots if not already created when receiving status update
-							if (PlayerId.StartsWith(TEXT("bot_")))
+							if (bIsBot)
 							{
 								GetOrCreateBotCharacter(PlayerId);
 							}
@@ -814,6 +969,10 @@ void AControllerInputPollingBridge::HandleWebSocketMessage(const FString& Messag
 			{
 				if (GameState.Equals(TEXT("Playing"), ESearchCase::IgnoreCase))
 				{
+					if (!LastKnownGameState.Equals(TEXT("Playing"), ESearchCase::IgnoreCase))
+					{
+						ResetDemoCharactersForNextRound();
+					}
 					BattleRoyaleSubsystem->StartBattleRoyale();
 				}
 				else
@@ -821,6 +980,19 @@ void AControllerInputPollingBridge::HandleWebSocketMessage(const FString& Messag
 					BattleRoyaleSubsystem->ResetBattleRoyale();
 				}
 			}
+			LastKnownGameState = GameState;
 		}
+	}
+	else if (MsgType.Equals(TEXT("resetGame"), ESearchCase::IgnoreCase))
+	{
+		StopDemoCharacters();
+		ClearBotCharactersForReset();
+		ResetDemoCharactersForNextRound();
+		LastKnownGameState = TEXT("Lobby");
+		if (UShowdownBattleRoyaleSubsystem* BattleRoyaleSubsystem = GetBattleRoyaleSubsystem())
+		{
+			BattleRoyaleSubsystem->ResetBattleRoyale();
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[Showdown] resetGame received from backend."));
 	}
 }

@@ -69,7 +69,10 @@ class VirtualJoystick {
 
   onPointerUp(e) {
     if (!this.active || e.pointerId !== this.pointerId) return;
+    this.release();
+  }
 
+  release() {
     this.active = false;
     this.pointerId = null;
     this.knob.classList.remove('active');
@@ -87,6 +90,12 @@ class VirtualJoystick {
     }
     if (this.onChange) {
       this.onChange(0, 0);
+    }
+  }
+
+  forceRelease() {
+    if (this.active || this.x !== 0 || this.y !== 0) {
+      this.release();
     }
   }
 

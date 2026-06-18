@@ -28,8 +28,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
 	TObjectPtr<AMyCharacter> ControlledCharacter;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "1", ClampMax = "4"))
-	int32 MaxDemoPlayers = 4;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "1", ClampMax = "100"))
+	int32 MaxDemoPlayers = 64;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "0"))
 	int32 MaxDemoBots = 20;
@@ -74,9 +74,11 @@ private:
 	FTimerHandle PollingTimerHandle;
 	FTimerHandle StatusPollingTimerHandle;
 	FTimerHandle WorldStateSyncTimerHandle;
+	FTimerHandle WebSocketReconnectTimerHandle;
 	bool bRequestInFlight = false;
 	bool bStatusRequestInFlight = false;
 	bool bWorldStateRequestInFlight = false;
+	bool bShuttingDown = false;
 	float LastDebugLogTime = -1000.0f;
 
 	UPROPERTY()
@@ -91,8 +93,11 @@ private:
 	TMap<FString, TObjectPtr<AMyCharacter>> PlayerCharactersById;
 	TMap<FString, TObjectPtr<AMyCharacter>> BotCharactersById;
 	TMap<FString, FVector2D> PlayerInitialPercentageMap;
+	FString LastKnownGameState;
 	TSharedPtr<IWebSocket> UnrealWebSocket;
 	void HandleWebSocketMessage(const FString& MessageString);
+	void ConnectWebSocket();
+	void ScheduleWebSocketReconnect();
 
 	void InitializeDemoCharacters();
 	void PollInputs();
@@ -104,11 +109,14 @@ private:
 	void ApplyMoveInput(const FString& PlayerId, float MoveX, float MoveY);
 	void ApplyBotMoveInput(const FString& BotId, float MoveX, float MoveY);
 	void StopDemoCharacters();
+	void ResetDemoCharactersForNextRound();
+	void ClearBotCharactersForReset();
 	AMyCharacter* FindExistingCharacter() const;
 	AMyCharacter* SpawnCharacterAt(const FVector& Location, const FRotator& Rotation, const TCHAR* NamePrefix) const;
 	AMyCharacter* GetOrCreatePlayerCharacter(const FString& PlayerId);
 	AMyCharacter* GetOrCreateBotCharacter(const FString& BotId);
 	FVector GetPlayerSpawnLocation(int32 PlayerIndex) const;
+	FVector WithResolvedSpawnZ(const FVector& Location) const;
 	void SpawnStaticBots();
 	FVector GetRandomBotSpawnLocation(FRandomStream& RandomStream, const TArray<FVector>& ExistingLocations) const;
 	bool IsFarEnoughFromExistingBots(const FVector& CandidateLocation, const TArray<FVector>& ExistingLocations) const;

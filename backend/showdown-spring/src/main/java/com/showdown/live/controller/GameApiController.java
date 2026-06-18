@@ -55,6 +55,14 @@ public class GameApiController {
     return response;
   }
 
+  @GetMapping("/debug/transport")
+  public Map<String, Object> transportStatus() {
+    Map<String, Object> response = new LinkedHashMap<>(webSocketHandler.transportStatus());
+    response.put("gameState", gameService.gameState());
+    response.put("serverTime", System.currentTimeMillis());
+    return response;
+  }
+
   @PostMapping("/join")
   public ResponseEntity<Map<String, Object>> join(@RequestBody Map<String, Object> body) {
     String nickname = String.valueOf(body.getOrDefault("nickname", "")).trim();
@@ -62,6 +70,7 @@ public class GameApiController {
       return ResponseEntity.badRequest().body(Map.of("success", false, "reason", "Nickname is required"));
     }
 
+    gameService.removePreviousDisconnectedPlayer(idFromBody(body, "previousPlayerId", "previousParticipantId"));
     Player player = gameService.createPlayer(nickname);
     webSocketHandler.broadcastState();
     return ResponseEntity.ok(Map.of(
@@ -91,6 +100,9 @@ public class GameApiController {
         asLongOrNull(body.get("jumpSeq")),
         asLongOrNull(body.get("emoteSeq"))
     );
+    if (updated == null) {
+      return ResponseEntity.badRequest().body(Map.of("success", false, "reason", "Input was ignored"));
+    }
     webSocketHandler.broadcastInput(updated);
     return ResponseEntity.ok(Map.of("success", true, "input", inputDto(updated)));
   }
@@ -184,8 +196,19 @@ public class GameApiController {
       positions = parseCompactPositions(body.get("p"));
     }
 
-    int updatedCount = gameService.updateUnrealPositions(positions);
+    GameService.UnrealPositionUpdateResult result = gameService.updateUnrealPositions(positions);
+    int updatedCount = result.updatedCount();
     boolean broadcasted = webSocketHandler.broadcastPositionsThrottled();
+    for (Player player : result.newlyDeadPlayers()) {
+      webSocketHandler.broadcast("playerDead", Map.of(
+          "participantId", player.participantId,
+          "playerId", player.playerId,
+          "nickname", player.nickname
+      ));
+    }
+    if (result.stateChanged()) {
+      webSocketHandler.broadcastState();
+    }
 
     return Map.of(
         "success", true,
@@ -228,6 +251,9 @@ public class GameApiController {
   public Map<String, Object> reset() {
     gameService.resetGame();
     webSocketHandler.stopPreviewLoop();
+    webSocketHandler.broadcastUnrealInputsSnapshot();
+    webSocketHandler.broadcastUnrealReset("adminReset");
+    webSocketHandler.broadcastPositionsNow();
     webSocketHandler.broadcastState();
     return Map.of("success", true, "gameState", gameService.gameState());
   }
@@ -235,9 +261,8 @@ public class GameApiController {
   @PostMapping("/admin/add-bots")
   public Map<String, Object> addBots(@RequestBody Map<String, Object> body) {
     int count = Math.max(1, ((Number) body.getOrDefault("count", 5)).intValue());
-    String[] names = {"BotA", "BotB", "BotC", "BotD", "BotE"};
     for (int i = 0; i < count; i++) {
-      gameService.createBot("[BOT] " + names[i % names.length], null);
+      gameService.createRandomBot();
     }
     webSocketHandler.broadcastState();
     return Map.of("success", true);
@@ -308,6 +333,16 @@ public class GameApiController {
           if (row.size() >= 4) {
             Object alive = row.get(3);
             position.put("state", asDouble(alive) == 1 ? "Alive" : "Dead");
+          }
+          if (row.size() >= 5) {
+            position.put("hp", row.get(4));
+          }
+          if (row.size() >= 6) {
+            position.put("maxHp", row.get(5));
+          }
+          if (row.size() >= 8) {
+            position.put("worldX", row.get(6));
+            position.put("worldY", row.get(7));
           }
           return position;
         })

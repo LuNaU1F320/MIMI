@@ -27,6 +27,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void TakeAutoAttackDamage(float DamageAmount);
 
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	void ResetForNextRound();
+
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool IsAlive() const { return bIsAlive; }
 
@@ -120,6 +123,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")
 	bool bAutoPossessForWASDTest = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input", meta = (ClampMin = "0.0"))
+	float ExternalMoveSpeed = 900.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input", meta = (ClampMin = "0.0"))
+	float MinimumExternalMoveSpeed = 900.0f;
+
 private:
 	FTimerHandle AutoAttackTimerHandle;
 	float TimeUntilNextAttack = 0.0f;
@@ -140,6 +149,7 @@ private:
 	void UpdateWeaponSwing();
 	void SweepSectorDamage(float PreviousYaw, float CurrentYaw);
 	bool IsTargetInsideSweepSegment(const AMyCharacter* Target, float PreviousYaw, float CurrentYaw, float AttackDistance) const;
+	void ApplyExternalMovementSettings();
 	void MoveForward(float Value);
 	void MoveRight(float Value);
 };

@@ -79,6 +79,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let playerPositions = {};
   let currentPlayersList = [];
   let activeScreenName = null;
+  let lastLobbySignature = '';
+  let lastResultSignature = '';
   const RADAR_VISION_RANGE_UNITS = 1300; // Radar vision range in Unreal Units (6000 * 22% = 1320)
 
 
@@ -138,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   socket.on('disconnect', () => {
+    forceZeroInput();
     statusEl.textContent = '서버 연결 끊김... 재연결 시도 중';
     statusEl.style.color = 'var(--color-peach-text)';
   });
@@ -162,8 +165,13 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'Lobby':
         stopInputSending();
         if (myPlayerId) {
-          showScreen(screenLobby, 'Lobby');
-          updateLobbyPlayers(playersList);
+          if (myData) {
+            showScreen(screenLobby, 'Lobby');
+            updateLobbyPlayersIfChanged(playersList);
+          } else {
+            clearSession();
+            showScreen(screenJoin, 'Join');
+          }
         } else {
           showScreen(screenJoin, 'Join');
         }
@@ -181,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
         break;
 
       case 'Playing':
-        if (myPlayerId) {
+        if (myPlayerId && myData) {
           if (activeScreenName !== 'Playing') {
             showScreen(screenPlaying, 'Playing');
             updatePlayingScreen(myData);
@@ -197,10 +205,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       case 'Result':
         stopInputSending();
-        if (myPlayerId) {
+        if (myPlayerId && myData && (myData.state === 'Dead' || myData.state === 'Winner' || myData.state === 'Spectator')) {
           showScreen(screenResult, 'Result');
-          showGameResults(data);
+          showGameResultsIfChanged(data);
         } else {
+          if (myPlayerId && !myData) clearSession();
           showScreen(screenJoin, 'Join');
         }
         break;
@@ -253,6 +262,43 @@ document.addEventListener('DOMContentLoaded', () => {
     myPlayerId = null;
     myNickname = null;
     myState = 'Joined';
+    lastLobbySignature = '';
+    lastResultSignature = '';
+  }
+
+  function makeLobbySignature(players) {
+    return players
+      .map(p => `${p.playerId}:${p.nickname}:${p.state}:${p.connected}:${p.isBot}`)
+      .join('|');
+  }
+
+  function updateLobbyPlayersIfChanged(players) {
+    const signature = makeLobbySignature(players);
+    playerCountEl.textContent = `${players.length}명`;
+    if (signature === lastLobbySignature) return;
+    lastLobbySignature = signature;
+    updateLobbyPlayers(players);
+  }
+
+  function mergeMyPlayerData(playerData) {
+    if (!playerData || !playerData.playerId) return;
+    const index = currentPlayersList.findIndex(p => p.playerId === playerData.playerId);
+    const merged = { ...(index >= 0 ? currentPlayersList[index] : {}), ...playerData };
+    if (index >= 0) {
+      currentPlayersList[index] = merged;
+    } else {
+      currentPlayersList = [...currentPlayersList, merged];
+    }
+    lastLobbySignature = '';
+  }
+
+  function showGameResultsIfChanged(data) {
+    const ranking = data.ranking || [];
+    const winnerId = data.winner ? data.winner.playerId : '';
+    const signature = `${winnerId}|${ranking.map(r => r.playerId).join(',')}`;
+    if (signature === lastResultSignature) return;
+    lastResultSignature = signature;
+    showGameResults(data);
   }
 
   // Shop views renderer
@@ -420,10 +466,10 @@ document.addEventListener('DOMContentLoaded', () => {
       playingStatus.textContent = 'ALIVE';
       playingStatus.className = 'player-status-role status-alive';
       spectatorPanel.style.display = 'none';
+      joystickTrack.style.opacity = '1';
+      joystickTrack.style.pointerEvents = 'auto';
       
-      // Default HP to 100
-      healthValue.textContent = '100';
-      healthBar.style.width = '100%';
+      updateMyHealthFromPositionState();
     } else {
       // Dead or Spectator
       playingStatus.textContent = 'SPECTATOR';
@@ -441,9 +487,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize joystick once when entering screen
     if (!joystickInstance && playerData.state === 'Alive') {
-      joystickTrack.style.opacity = '1';
-      joystickTrack.style.pointerEvents = 'auto';
-      
       // Delay initialization slightly to let the browser paint the active screen
       // and calculate bounds correctly
       setTimeout(() => {
@@ -456,8 +499,8 @@ document.addEventListener('DOMContentLoaded', () => {
           onRelease: () => {
             joystickDebug.textContent = 'X: 0.00, Y: 0.00';
             lastSentVector = { x: 0, y: 0 };
-    jumpSeq = 0;
-    emoteSeq = 0;
+            jumpSeq = 0;
+            emoteSeq = 0;
             sendInputToServer(0, 0); // instantly send zero
           }
         });
@@ -473,7 +516,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateMyHealthFromPositionState() {
     const myPosition = playerPositions[myPlayerId];
-    if (!myPosition || myPosition.length < 5) return;
+    if (!myPosition || myPosition.length < 5) {
+      healthValue.textContent = '100';
+      healthBar.style.width = '100%';
+      return;
+    }
 
     const hp = Number(myPosition[3]);
     const maxHp = Number(myPosition[4]) || 100;
@@ -486,8 +533,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Results screen renderer
   function showGameResults(data) {
+    const ranking = data.ranking || [];
     const isWinner = data.winner && data.winner.playerId === myPlayerId;
-    const myRankItemIndex = data.ranking.findIndex(r => r.playerId === myPlayerId);
+    const myRankItemIndex = ranking.findIndex(r => r.playerId === myPlayerId);
     
     // Calc rank
     let rankText = '관전자';
@@ -500,7 +548,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (myRankItemIndex !== -1) {
       // ranking has players from first to die to last. So index 0 is first to die.
       // Total players - myIndex is our rank.
-      const totalRanked = data.ranking.length;
+      const totalRanked = ranking.length;
       const rank = totalRanked - myRankItemIndex + 1; // plus 1 for winner
       rankText = `최종 순위: ${rank}등`;
       resultBadge.textContent = '💀';
@@ -691,7 +739,8 @@ document.addEventListener('DOMContentLoaded', () => {
     btnJoin.disabled = true;
     btnJoin.textContent = '입장 중...';
 
-    socket.emit('join', { nickname }, (response) => {
+    const previousPlayerId = myPlayerId;
+    socket.emit('join', { nickname, previousPlayerId }, (response) => {
       btnJoin.disabled = false;
       btnJoin.textContent = '입장하기';
 
@@ -702,9 +751,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sessionStorage.setItem('showdown_playerId', myPlayerId);
         sessionStorage.setItem('showdown_nickname', myNickname);
+        mergeMyPlayerData(response);
 
         if (currentGameState === 'Playing') {
           showScreen(screenPlaying, 'Playing');
+          updatePlayingScreen(response);
           socket.emit('rejoin', { playerId: myPlayerId }, (res) => {
             if (res.success) {
               myState = res.state;
@@ -714,6 +765,7 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         } else {
           showScreen(screenLobby, 'Lobby');
+          updateLobbyPlayersIfChanged(currentPlayersList);
         }
       } else {
         alert(`입장 실패: ${response.reason}`);
@@ -723,15 +775,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Re-enter lobby after result
   btnLobbyReturn.addEventListener('click', () => {
-    socket.emit('rejoin', { playerId: myPlayerId }, (res) => {
-      if (res.success) {
-        myState = res.state;
-        showScreen(screenLobby, 'Lobby');
-      } else {
-        clearSession();
-        showScreen(screenJoin, 'Join');
-      }
-    });
+    forceZeroInput();
+    socket.emit('returnToLobby');
+    showScreen(screenLobby, 'Lobby');
   });
 
   // Spectator Voting buttons
@@ -791,19 +837,37 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function stopInputSending() {
+    forceZeroInput();
     if (inputInterval) {
       clearInterval(inputInterval);
       inputInterval = null;
     }
-    joystickInstance = null; // reset instance so it can recreate next game
     lastSentVector = { x: 0, y: 0 };
     jumpSeq = 0;
     emoteSeq = 0;
   }
 
+  function forceZeroInput() {
+    const hadInput = lastSentVector.x !== 0 || lastSentVector.y !== 0;
+    lastSentVector = { x: 0, y: 0 };
+    if (joystickInstance && typeof joystickInstance.forceRelease === 'function') {
+      joystickInstance.forceRelease();
+    }
+    if (currentGameState === 'Playing' && myState === 'Alive' && hadInput) {
+      sendInputToServer(0, 0);
+    }
+  }
+
   function sendInputToServer(x, y) {
     socket.emit('moveInput', { moveX: x, moveY: y, jumpSeq, emoteSeq });
   }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) forceZeroInput();
+  });
+
+  window.addEventListener('pagehide', forceZeroInput);
+  window.addEventListener('blur', forceZeroInput);
 });
 
 

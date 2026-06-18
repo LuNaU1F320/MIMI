@@ -17,11 +17,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 @Component
@@ -31,7 +34,9 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
   private final Map<String, WebSocketSession> unrealSessions = new ConcurrentHashMap<>();
   private final Map<String, String> sessionPlayerIds = new ConcurrentHashMap<>();
+  private final Map<String, String> sessionRoles = new ConcurrentHashMap<>();
   private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+  private final ScheduledExecutorService positionScheduler = Executors.newSingleThreadScheduledExecutor();
 
   @Value("${showdown.tunnel.enabled:true}")
   private boolean tunnelEnabled;
@@ -40,11 +45,18 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   private String port;
 
   private ScheduledFuture<?> previewLoop;
+  private ScheduledFuture<?> positionLoop;
   private Process tunnelProcess;
   private volatile String tunnelUrl;
   private volatile long lastPositionBroadcastAt = 0;
+  private final AtomicLong lastMobileInputAt = new AtomicLong(0);
+  private final AtomicLong lastUnrealWorldStateAt = new AtomicLong(0);
+  private final AtomicLong lastUnrealInputsBroadcastAt = new AtomicLong(0);
+  private final AtomicInteger lastUnrealWorldStateUpdatedCount = new AtomicInteger(0);
   private static final long POSITION_BROADCAST_INTERVAL_MS = 200;
   private static final double MOBILE_MINIMAP_RANGE = 25.0;
+  private static final int SEND_TIME_LIMIT_MS = 5000;
+  private static final int SEND_BUFFER_SIZE_LIMIT_BYTES = 512 * 1024;
 
   public GameWebSocketHandler(GameService gameService, ObjectMapper objectMapper) {
     this.gameService = gameService;
@@ -94,6 +106,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   @PreDestroy
   public void shutdown() {
     stopPreviewLoop();
+    positionScheduler.shutdownNow();
     scheduler.shutdownNow();
     if (tunnelProcess != null) {
       tunnelProcess.destroy();
@@ -106,14 +119,23 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
   @Override
   public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+    WebSocketSession safeSession = new ConcurrentWebSocketSessionDecorator(
+        session,
+        SEND_TIME_LIMIT_MS,
+        SEND_BUFFER_SIZE_LIMIT_BYTES
+    );
     if (isUnrealSession(session)) {
-      unrealSessions.put(session.getId(), session);
-      sendUnreal(session, unrealStatePayload());
+      unrealSessions.put(session.getId(), safeSession);
+      sessionRoles.put(session.getId(), "unreal");
+      System.out.println("[WebSocket] Connected role=unreal session=" + session.getId());
+      sendUnreal(safeSession, unrealStatePayload());
       return;
     }
 
-    sessions.put(session.getId(), session);
-    send(session, "gameStateChanged", snapshotPayload(), null);
+    sessions.put(session.getId(), safeSession);
+    sessionRoles.put(session.getId(), "mobile");
+    System.out.println("[WebSocket] Connected role=mobile session=" + session.getId());
+    send(safeSession, "gameStateChanged", snapshotPayload(), null);
   }
 
   @Override
@@ -127,6 +149,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     JsonNode payload = envelope.payload == null ? objectMapper.createObjectNode() : envelope.payload;
 
     switch (envelope.event) {
+      case "__ping" -> send(outboundSession(session), "__pong", Map.of("serverTime", System.currentTimeMillis()), envelope.requestId);
       case "join" -> handleJoin(session, payload, envelope.requestId);
       case "rejoin" -> handleRejoin(session, payload, envelope.requestId);
       case "moveInput" -> handleMoveInput(session, payload);
@@ -136,6 +159,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
       case "adminStartShop" -> handleAdminStartShop();
       case "adminStartGame" -> handleAdminStartGame();
       case "adminResetGame" -> handleAdminResetGame();
+      case "returnToLobby" -> handleReturnToLobby();
       case "adminAddBots" -> handleAdminAddBots(payload);
       case "unrealPlayerStateChanged" -> handleUnrealPlayerStateChanged(payload);
       default -> {
@@ -145,9 +169,15 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
   @Override
   public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+    String role = sessionRoles.remove(session.getId());
+    String playerId = sessionPlayerIds.get(session.getId());
     unrealSessions.remove(session.getId());
     sessions.remove(session.getId());
-    String playerId = sessionPlayerIds.remove(session.getId());
+    playerId = sessionPlayerIds.remove(session.getId());
+    System.out.println("[WebSocket] Closed role=" + roleName(role) + " session=" + session.getId()
+        + " playerId=" + valueOrDash(playerId)
+        + " code=" + status.getCode()
+        + " reason=" + valueOrDash(status.getReason()));
     if (playerId != null) {
       gameService.disconnect(playerId);
       broadcastState();
@@ -155,6 +185,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   }
 
   public void broadcastState() {
+    if ("Result".equals(gameService.gameState())) {
+      stopPreviewLoop();
+      gameService.resetAllInputs();
+      broadcastUnrealInputsSnapshot();
+    }
     broadcast("gameStateChanged", snapshotPayload());
     broadcastUnreal(unrealStatePayload());
   }
@@ -175,14 +210,29 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     ));
     broadcastUnreal(Map.of(
         "type", "inputsUpdated",
+        "fullSnapshot", false,
         "inputs", List.of(inputPayload(player))
     ));
   }
 
   public void broadcastUnrealInputsSnapshot() {
+    lastUnrealInputsBroadcastAt.set(System.currentTimeMillis());
     broadcastUnreal(Map.of(
         "type", "inputsUpdated",
+        "fullSnapshot", true,
         "inputs", gameService.unrealInputs()
+    ));
+  }
+
+  public void broadcastUnrealReset(String reason) {
+    lastUnrealInputsBroadcastAt.set(System.currentTimeMillis());
+    broadcastUnreal(Map.of(
+        "type", "resetGame",
+        "reason", reason,
+        "gameState", gameService.gameState(),
+        "players", gameService.unrealPlayers(),
+        "inputs", gameService.unrealInputs(),
+        "timestamp", System.currentTimeMillis()
     ));
   }
 
@@ -200,10 +250,15 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   public synchronized void startPreviewLoop() {
     stopPreviewLoop();
     previewLoop = scheduler.scheduleAtFixedRate(() -> {
-      gameService.tickPreviewPhysics();
+      gameService.tickPreviewPhysics(unrealSessions.isEmpty());
       broadcastUnrealInputsSnapshot();
-      broadcastPositionsNow();
-    }, 200, 200, TimeUnit.MILLISECONDS);
+    }, 100, 100, TimeUnit.MILLISECONDS);
+    positionLoop = positionScheduler.scheduleAtFixedRate(
+        this::broadcastPositionsNow,
+        POSITION_BROADCAST_INTERVAL_MS,
+        POSITION_BROADCAST_INTERVAL_MS,
+        TimeUnit.MILLISECONDS
+    );
   }
 
   public synchronized void stopPreviewLoop() {
@@ -211,19 +266,25 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
       previewLoop.cancel(false);
       previewLoop = null;
     }
+    if (positionLoop != null) {
+      positionLoop.cancel(false);
+      positionLoop = null;
+    }
   }
 
   private void handleJoin(WebSocketSession session, JsonNode payload, String requestId) throws IOException {
+    WebSocketSession outboundSession = outboundSession(session);
     String nickname = payload.path("nickname").asText("").trim();
     if (nickname.isEmpty()) {
-      send(session, "ack", Map.of("success", false, "reason", "Nickname is required"), requestId);
+      send(outboundSession, "ack", Map.of("success", false, "reason", "Nickname is required"), requestId);
       return;
     }
 
+    gameService.removePreviousDisconnectedPlayer(idFromPayload(payload, "previousPlayerId", "previousParticipantId"));
     Player player = gameService.createPlayer(nickname);
     sessionPlayerIds.put(session.getId(), player.playerId);
     broadcastState();
-    send(session, "ack", Map.of(
+    send(outboundSession, "ack", Map.of(
         "success", true,
         "participantId", player.participantId,
         "playerId", player.playerId,
@@ -233,15 +294,16 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   }
 
   private void handleRejoin(WebSocketSession session, JsonNode payload, String requestId) throws IOException {
+    WebSocketSession outboundSession = outboundSession(session);
     String playerId = idFromPayload(payload);
     Player player = gameService.rejoin(playerId);
     if (player == null) {
-      send(session, "ack", Map.of("success", false, "reason", "Player session not found"), requestId);
+      send(outboundSession, "ack", Map.of("success", false, "reason", "Player session not found"), requestId);
       return;
     }
 
     sessionPlayerIds.put(session.getId(), player.playerId);
-    send(session, "ack", Map.of(
+    send(outboundSession, "ack", Map.of(
         "success", true,
         "participantId", player.participantId,
         "playerId", player.playerId,
@@ -260,8 +322,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         payload.has("jumpSeq") ? payload.path("jumpSeq").asLong() : null,
         payload.has("emoteSeq") ? payload.path("emoteSeq").asLong() : null
     );
+    if (player != null) {
+      lastMobileInputAt.set(System.currentTimeMillis());
+    }
     broadcastInput(player);
-    gameService.tickPreviewPhysics();
+    gameService.tickPreviewPhysics(unrealSessions.isEmpty());
     broadcastPositionsThrottled();
   }
 
@@ -270,7 +335,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         idFromPayload(payload),
         payload.path("itemId").asText("")
     );
-    send(session, "ack", result, requestId);
+    send(outboundSession(session), "ack", result, requestId);
     broadcastState();
   }
 
@@ -306,14 +371,25 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   private void handleAdminResetGame() {
     gameService.resetGame();
     stopPreviewLoop();
+    broadcastUnrealInputsSnapshot();
+    broadcastUnrealReset("adminReset");
+    broadcastPositionsNow();
+    broadcastState();
+  }
+
+  private void handleReturnToLobby() {
+    gameService.resetGame();
+    stopPreviewLoop();
+    broadcastUnrealInputsSnapshot();
+    broadcastUnrealReset("returnToLobby");
+    broadcastPositionsNow();
     broadcastState();
   }
 
   private void handleAdminAddBots(JsonNode payload) {
     int count = Math.max(1, payload.path("count").asInt(5));
     for (int i = 0; i < count; i++) {
-      String suffix = Long.toString(System.nanoTime(), 36);
-      gameService.createBot("[BOT] Bot" + i, "bot_" + suffix.substring(Math.max(0, suffix.length() - 5)));
+      gameService.createRandomBot();
     }
     broadcastState();
   }
@@ -360,10 +436,36 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
       updates.add(update);
     }
 
-    int updated = gameService.updateUnrealPositions(updates);
+    GameService.UnrealPositionUpdateResult result = gameService.updateUnrealPositions(updates);
+    int updated = result.updatedCount();
+    lastUnrealWorldStateAt.set(System.currentTimeMillis());
+    lastUnrealWorldStateUpdatedCount.set(updated);
     if (updated > 0) {
       broadcastPositionsThrottled();
+    }
+    for (Player player : result.newlyDeadPlayers()) {
+      broadcast("playerDead", Map.of("participantId", player.participantId, "playerId", player.playerId, "nickname", player.nickname));
+    }
+    if (result.stateChanged()) {
       broadcastState();
+    }
+  }
+
+  @Override
+  public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
+    String role = sessionRoles.get(session.getId());
+    String playerId = sessionPlayerIds.get(session.getId());
+    String exceptionName = exception == null ? "-" : exception.getClass().getSimpleName();
+    String message = exception == null ? "-" : exception.getMessage();
+    System.out.println("[WebSocket] Transport error role=" + roleName(role)
+        + " session=" + session.getId()
+        + " playerId=" + valueOrDash(playerId)
+        + " exception=" + exceptionName
+        + " message=" + valueOrDash(message));
+    unrealSessions.remove(session.getId());
+    sessions.remove(session.getId());
+    if (session.isOpen()) {
+      session.close(CloseStatus.SERVER_ERROR);
     }
   }
 
@@ -381,6 +483,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   private void handleUnrealResult(JsonNode root) {
     gameService.applyResult(idFromPayload(root, "winnerId", "winnerParticipantId"), null);
     stopPreviewLoop();
+    broadcastUnrealInputsSnapshot();
     broadcastState();
   }
 
@@ -469,6 +572,33 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
   private void sendUnreal(WebSocketSession session, Object payload) throws IOException {
     session.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
+  }
+
+  private WebSocketSession outboundSession(WebSocketSession session) {
+    WebSocketSession safeSession = unrealSessions.get(session.getId());
+    if (safeSession != null) return safeSession;
+    safeSession = sessions.get(session.getId());
+    return safeSession == null ? session : safeSession;
+  }
+
+  private String roleName(String role) {
+    return role == null ? "unknown" : role;
+  }
+
+  private String valueOrDash(String value) {
+    return value == null || value.isBlank() ? "-" : value;
+  }
+
+  public Map<String, Object> transportStatus() {
+    return Map.of(
+        "mobileSessions", sessions.size(),
+        "unrealSessions", unrealSessions.size(),
+        "lastMobileInputAt", lastMobileInputAt.get(),
+        "lastUnrealWorldStateAt", lastUnrealWorldStateAt.get(),
+        "lastUnrealWorldStateUpdatedCount", lastUnrealWorldStateUpdatedCount.get(),
+        "lastUnrealInputsBroadcastAt", lastUnrealInputsBroadcastAt.get(),
+        "lastPositionBroadcastAt", lastPositionBroadcastAt
+    );
   }
 
   private String idFromPayload(JsonNode payload) {
