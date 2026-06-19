@@ -15,6 +15,7 @@
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "CharacterEquipmentComponent.h"
+#include "Emote/EmoteComponent.h"
 #include "ZoneDamageReceiverComponent.h"
 
 AMyCharacter::AMyCharacter()
@@ -80,6 +81,12 @@ AMyCharacter::AMyCharacter()
 
 	EquipmentComponent = CreateDefaultSubobject<UCharacterEquipmentComponent>(TEXT("EquipmentComponent"));
 	ZoneDamageReceiverComponent = CreateDefaultSubobject<UZoneDamageReceiverComponent>(TEXT("ZoneDamageReceiverComponent"));
+
+	EmoteComponent = CreateDefaultSubobject<UEmoteComponent>(TEXT("EmoteComponent"));
+	EmoteComponent->SetupAttachment(GetRootComponent());
+	EmoteComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
+	EmoteComponent->SetDrawSize(FVector2D(64.0f, 64.0f));
+	EmoteComponent->SetWidgetSpace(EWidgetSpace::Screen);
 
 	bUseControllerRotationYaw = false;
 	ApplyExternalMovementSettings();
@@ -599,5 +606,18 @@ void AMyCharacter::SetOverlayColor(FLinearColor Color)
 				}
 			}
 		}
+	}
+}
+
+void AMyCharacter::PlayEmote(FString EmoteName, float PlayRate)
+{
+	UE_LOG(LogTemp, Log, TEXT("[MyCharacter] PlayEmote called for character %s with EmoteName: %s"), *GetName(), *EmoteName);
+	if (EmoteComponent)
+	{
+		EmoteComponent->PlayEmote(EmoteName, PlayRate);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[MyCharacter] PlayEmote failed: EmoteComponent is null for character %s"), *GetName());
 	}
 }

@@ -565,6 +565,45 @@ void UControllerInputBridgeSubsystem::ApplyBotMoveInput(const FString& BotId, fl
 	BotCharacter->SetMoveInput(MoveX, MoveY);
 }
 
+void UControllerInputBridgeSubsystem::ApplyEmoteInput(const FString& PlayerId, int64 EmoteSeq)
+{
+	AMyCharacter* PlayerCharacter = GetOrCreatePlayerCharacter(PlayerId);
+	if (!PlayerCharacter)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ControllerInputBridge] ApplyEmoteInput: Player character not found for ID: %s"), *PlayerId);
+		return;
+	}
+
+	// If emoteSeq is reset to 0 (e.g. from mobile stopping input), sync our record to 0
+	if (EmoteSeq == 0)
+	{
+		LastEmoteSeqByPlayerId.Add(PlayerId, 0);
+		return;
+	}
+
+	int64* LastSeq = LastEmoteSeqByPlayerId.Find(PlayerId);
+	if (!LastSeq)
+	{
+		LastEmoteSeqByPlayerId.Add(PlayerId, EmoteSeq);
+		UE_LOG(LogTemp, Log, TEXT("[ControllerInputBridge] First emote seq for player %s is %lld"), *PlayerId, EmoteSeq);
+		
+		// If the first received sequence is already greater than 0, play it immediately
+		if (EmoteSeq > 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[ControllerInputBridge] Playing initial emote for player %s (seq: %lld)"), *PlayerId, EmoteSeq);
+			PlayerCharacter->PlayEmote(TEXT("Default"), 1.0f);
+		}
+		return;
+	}
+
+	if (EmoteSeq > *LastSeq)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[ControllerInputBridge] Emote seq advanced for player %s: %lld -> %lld. Playing emote."), *PlayerId, *LastSeq, EmoteSeq);
+		LastEmoteSeqByPlayerId.Add(PlayerId, EmoteSeq);
+		PlayerCharacter->PlayEmote(TEXT("Default"), 1.0f);
+	}
+}
+
 void UControllerInputBridgeSubsystem::StopDemoCharacters()
 {
 	for (const TObjectPtr<AMyCharacter>& DemoPlayerCharacter : DemoPlayerCharacters)
@@ -995,6 +1034,15 @@ void UControllerInputBridgeSubsystem::HandleWebSocketMessage(const FString& Mess
 					ApplyMoveInput(PlayerId, static_cast<float>(MoveX), static_cast<float>(MoveY));
 					SeenPlayerIds.Add(PlayerId);
 					++AppliedPlayerCount;
+				}
+			}
+
+			double EmoteSeqDouble = 0.0;
+			if (InputObject->TryGetNumberField(TEXT("emoteSeq"), EmoteSeqDouble))
+			{
+				if (!PlayerId.StartsWith(TEXT("bot_")))
+				{
+					ApplyEmoteInput(PlayerId, static_cast<int64>(EmoteSeqDouble));
 				}
 			}
 		}

@@ -304,7 +304,8 @@ app.post('/api/join', (req, res) => {
     joinedAt: Date.now(),
     items: [],
     cheerTargetId: null,
-    vote: null
+    vote: null,
+    emoteSeq: 0
   };
 
   broadcastState();
@@ -319,7 +320,7 @@ app.post('/api/join', (req, res) => {
 
 // Send input (alternative HTTP API)
 app.post('/api/input', (req, res) => {
-  const { playerId, moveX, moveY } = req.body;
+  const { playerId, moveX, moveY, emoteSeq } = req.body;
   if (!playerId || !players[playerId]) {
     return res.status(404).json({ success: false, reason: 'Player not found' });
   }
@@ -330,12 +331,16 @@ app.post('/api/input', (req, res) => {
 
   players[playerId].x = Number(moveX) || 0;
   players[playerId].y = Number(moveY) || 0;
+  if (emoteSeq !== undefined) {
+    players[playerId].emoteSeq = Number(emoteSeq) || 0;
+  }
 
   // Broadcast inputs to host/unreal
   io.emit('inputsUpdated', {
     playerId,
     moveX: players[playerId].x,
-    moveY: players[playerId].y
+    moveY: players[playerId].y,
+    emoteSeq: players[playerId].emoteSeq
   });
 
   sendToUnreal({
@@ -344,7 +349,8 @@ app.post('/api/input', (req, res) => {
       {
         playerId,
         moveX: players[playerId].x,
-        moveY: players[playerId].y
+        moveY: players[playerId].y,
+        emoteSeq: players[playerId].emoteSeq
       }
     ]
   });
@@ -781,18 +787,22 @@ io.on('connection', (socket) => {
   });
 
   // Receive player movement input
-  socket.on('moveInput', ({ moveX, moveY }) => {
+  socket.on('moveInput', ({ moveX, moveY, emoteSeq }) => {
     if (!socketPlayerId || !players[socketPlayerId]) return;
     if (!canAcceptPlayerInput(socketPlayerId)) return;
 
     players[socketPlayerId].x = Number(moveX) || 0;
     players[socketPlayerId].y = Number(moveY) || 0;
+    if (emoteSeq !== undefined) {
+      players[socketPlayerId].emoteSeq = Number(emoteSeq) || 0;
+    }
 
     // Pushes changes to host dashboard and Unreal client
     io.emit('inputsUpdated', {
       playerId: socketPlayerId,
       moveX: players[socketPlayerId].x,
-      moveY: players[socketPlayerId].y
+      moveY: players[socketPlayerId].y,
+      emoteSeq: players[socketPlayerId].emoteSeq
     });
 
     sendToUnreal({
@@ -801,7 +811,8 @@ io.on('connection', (socket) => {
         {
           playerId: socketPlayerId,
           moveX: players[socketPlayerId].x,
-          moveY: players[socketPlayerId].y
+          moveY: players[socketPlayerId].y,
+          emoteSeq: players[socketPlayerId].emoteSeq
         }
       ]
     });
