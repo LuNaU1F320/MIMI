@@ -47,8 +47,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const customColorPanel = document.getElementById('custom-color-panel');
   const selectedColorPreview = document.getElementById('selected-color-preview');
   const colorPickerValue = document.getElementById('color-picker-value');
-  const colorPlane = document.getElementById('color-plane');
-  const colorPlaneHandle = document.getElementById('color-plane-handle');
   const hueSlider = document.getElementById('hue-slider');
   const playerChips = document.getElementById('player-chips');
   const playerCountEl = document.getElementById('player-count');
@@ -60,8 +58,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const joystickTrack = document.getElementById('joystick-track');
   const joystickKnob = document.getElementById('joystick-knob');
   const joystickDebug = document.getElementById('joystick-debug');
-  const btnJump = document.getElementById('btn-jump');
   const btnEmote = document.getElementById('btn-emote');
+  const joystickArea = document.querySelector('.joystick-area');
+  const controllerStateOverlay = document.getElementById('controller-state-overlay');
+  const controllerStateTitle = document.getElementById('controller-state-title');
+  const controllerStateDesc = document.getElementById('controller-state-desc');
   const spectatorPanel = document.getElementById('spectator-panel');
   
   const resultBadge = document.getElementById('result-badge');
@@ -69,6 +70,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const resultRank = document.getElementById('result-rank');
   const resultStateTxt = document.getElementById('result-state-txt');
   const resultTimeTxt = document.getElementById('result-time-txt');
+  const resultControllerPanel = document.getElementById('result-controller-panel');
+  const resultJoystickTrack = document.getElementById('result-joystick-track');
+  const resultJoystickKnob = document.getElementById('result-joystick-knob');
+  const resultJoystickDebug = document.getElementById('result-joystick-debug');
+  const resultBtnEmote = document.getElementById('result-btn-emote');
   const btnLobbyReturn = document.getElementById('btn-lobby-return');
   
   const minimapCanvas = document.getElementById('minimap-canvas');
@@ -77,13 +83,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Application State
   let myPlayerId = sessionStorage.getItem('showdown_playerId') || null;
   let myNickname = sessionStorage.getItem('showdown_nickname') || null;
-  let myColor = sessionStorage.getItem('showdown_color') || '#a8e6cf';
+  let myColor = sessionStorage.getItem('showdown_color') || '#00e676';
   let myState = 'Joined'; // 'Joined' | 'Alive' | 'Dead' | 'Spectator'
   let currentGameState = 'Lobby';
   let joystickInstance = null;
+  let resultJoystickInstance = null;
   let inputInterval = null;
   let lastSentVector = { x: 0, y: 0 };
-  let jumpSeq = 0;
   let emoteSeq = 0;
   let playerPositions = {};
   let currentPlayersList = [];
@@ -94,9 +100,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   function syncActionButtons() {
-    const disabled = myState !== 'Alive' || currentGameState !== 'Playing';
-    if (btnJump) btnJump.disabled = disabled;
+    const disabled = !canSendControllerInput();
     if (btnEmote) btnEmote.disabled = disabled;
+    if (resultBtnEmote) resultBtnEmote.disabled = disabled;
+  }
+
+  function canSendControllerInput() {
+    return (myState === 'Alive' && currentGameState === 'Playing')
+      || (myState === 'Winner' && currentGameState === 'Result');
   }
   // --- 1. Premium Visual Effects ---
   
@@ -231,11 +242,14 @@ document.addEventListener('DOMContentLoaded', () => {
   socket.on('playerDead', (data) => {
     console.log('Player died:', data);
     if (data.playerId === myPlayerId) {
+      forceZeroInput();
       myState = 'Dead';
       // Trigger haptic feedback if supported
       if (navigator.vibrate) {
         navigator.vibrate([150, 100, 150]);
       }
+      const latestSelf = currentPlayersList.find(p => p.playerId === myPlayerId);
+      updatePlayingScreen({ ...(latestSelf || {}), playerId: myPlayerId, nickname: myNickname || '플레이어', state: 'Dead' });
       // Instantly refresh playing view to load spectator panel
       socket.emit('rejoin', { playerId: myPlayerId }, (res) => {
         if (res.success) myState = res.state;
@@ -273,7 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sessionStorage.removeItem('showdown_color');
     myPlayerId = null;
     myNickname = null;
-    myColor = '#a8e6cf';
+    myColor = '#00e676';
     myState = 'Joined';
     lastLobbySignature = '';
     lastResultSignature = '';
@@ -474,11 +488,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Active playing view renderer
-  function updatePlayingScreen(playerData) {
+  function updatePlayingScreen(playerData, options = {}) {
     if (!playerData) return;
     
     playingNickname.textContent = playerData.nickname;
-    
+
+    const isWinnerResult = options.resultMode && playerData.state === 'Winner';
+    if (controllerStateOverlay) controllerStateOverlay.hidden = true;
+    if (joystickArea) joystickArea.classList.remove('is-eliminated');
+
     if (playerData.state === 'Alive') {
       playingStatus.textContent = 'ALIVE';
       playingStatus.className = 'player-status-role status-alive';
@@ -487,11 +505,19 @@ document.addEventListener('DOMContentLoaded', () => {
       joystickTrack.style.pointerEvents = 'auto';
       
       updateMyHealthFromPositionState();
+    } else if (isWinnerResult) {
+      playingStatus.textContent = 'WINNER';
+      playingStatus.className = 'player-status-role status-winner';
+      spectatorPanel.style.display = 'none';
+      joystickTrack.style.opacity = '1';
+      joystickTrack.style.pointerEvents = 'auto';
+      updateMyHealthFromPositionState();
     } else {
       // Dead or Spectator
-      playingStatus.textContent = 'SPECTATOR';
-      playingStatus.className = 'player-status-role status-spectator';
-      spectatorPanel.style.display = 'block';
+      const isDead = playerData.state === 'Dead';
+      playingStatus.textContent = isDead ? 'DEAD' : 'SPECTATOR';
+      playingStatus.className = isDead ? 'player-status-role status-dead' : 'player-status-role status-spectator';
+      spectatorPanel.style.display = isDead ? 'block' : 'none';
       
       // HP to 0
       healthValue.textContent = '0';
@@ -500,6 +526,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // Disable joystick interactivity visually
       joystickTrack.style.opacity = '0.4';
       joystickTrack.style.pointerEvents = 'none';
+      if (joystickArea) joystickArea.classList.add('is-eliminated');
+      if (controllerStateOverlay && isDead) {
+        controllerStateOverlay.hidden = false;
+        controllerStateTitle.textContent = '탈락';
+        controllerStateDesc.textContent = '전투에서 탈락했습니다.';
+      }
     }
 
     // Initialize joystick once when entering screen
@@ -516,13 +548,14 @@ document.addEventListener('DOMContentLoaded', () => {
           onRelease: () => {
             joystickDebug.textContent = 'X: 0.00, Y: 0.00';
             lastSentVector = { x: 0, y: 0 };
-            jumpSeq = 0;
             emoteSeq = 0;
             sendInputToServer(0, 0); // instantly send zero
           }
         });
       }, 50);
     }
+
+    syncActionButtons();
   }
 
   // Helper to invert y values back to negative if we want up as positive on backend.
@@ -562,6 +595,9 @@ document.addEventListener('DOMContentLoaded', () => {
       resultBadge.className = 'result-badge victory';
       resultTitle.textContent = 'VICTORY';
       resultTitle.className = 'result-title victory';
+      if (resultControllerPanel) resultControllerPanel.hidden = false;
+      initializeResultJoystick();
+      startInputSending();
     } else if (myRankItemIndex !== -1) {
       // ranking has players from first to die to last. So index 0 is first to die.
       // Total players - myIndex is our rank.
@@ -572,16 +608,47 @@ document.addEventListener('DOMContentLoaded', () => {
       resultBadge.className = 'result-badge';
       resultTitle.textContent = 'DEFEATED';
       resultTitle.className = 'result-title defeated';
+      if (resultControllerPanel) resultControllerPanel.hidden = true;
+      syncActionButtons();
     } else {
       resultBadge.textContent = '👁️';
       resultBadge.className = 'result-badge';
       resultTitle.textContent = 'SPECTATED';
       resultTitle.className = 'result-title';
+      if (resultControllerPanel) resultControllerPanel.hidden = true;
+      syncActionButtons();
     }
 
     resultRank.textContent = rankText;
     resultStateTxt.textContent = isWinner ? '생존 (우승)' : '탈락';
     resultTimeTxt.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function initializeResultJoystick() {
+    if (resultJoystickInstance || !resultJoystickTrack || !resultJoystickKnob) {
+      syncActionButtons();
+      return;
+    }
+
+    setTimeout(() => {
+      if (resultJoystickInstance || !resultJoystickTrack || !resultJoystickKnob) return;
+      resultJoystickInstance = new VirtualJoystick(resultJoystickTrack, resultJoystickKnob, {
+        onChange: (x, y) => {
+          if (resultJoystickDebug) {
+            resultJoystickDebug.textContent = `X: ${x.toFixed(2)}, Y: ${eY(y).toFixed(2)}`;
+          }
+          lastSentVector = { x, y };
+        },
+        onRelease: () => {
+          if (resultJoystickDebug) {
+            resultJoystickDebug.textContent = 'X: 0.00, Y: 0.00';
+          }
+          lastSentVector = { x: 0, y: 0 };
+          sendInputToServer(0, 0);
+        }
+      });
+      syncActionButtons();
+    }, 50);
   }
 
   // Helper to get player's Unreal world position (X, Y)
@@ -664,7 +731,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const arenaTop = cy + (ry_top / RADAR_VISION_RANGE_UNITS) * maxRadius;
     const arenaSize = (6000 / RADAR_VISION_RANGE_UNITS) * maxRadius;
 
-    minimapCtx.strokeStyle = '#ffaaa6'; // Pastel Coral color
+    minimapCtx.strokeStyle = '#ff1744';
     minimapCtx.lineWidth = 4;
     minimapCtx.strokeRect(arenaLeft, arenaTop, arenaSize, arenaSize);
 
@@ -703,9 +770,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (pInfo && pInfo.color) {
           minimapCtx.fillStyle = pInfo.color;
         } else if (isBot) {
-          minimapCtx.fillStyle = '#dcedc1'; // Bot: soft lavender
+          minimapCtx.fillStyle = '#ff9100';
         } else {
-          minimapCtx.fillStyle = '#a8d8ea'; // Player: soft blue
+          minimapCtx.fillStyle = '#2979ff';
         }
         
         minimapCtx.fill();
@@ -738,7 +805,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Me center dot
     minimapCtx.beginPath();
     minimapCtx.arc(cx, cy, 11, 0, Math.PI * 2);
-    minimapCtx.fillStyle = myColor || '#a8e6cf';
+    minimapCtx.fillStyle = myColor || '#00e676';
     minimapCtx.fill();
     minimapCtx.strokeStyle = '#ffffff';
     minimapCtx.lineWidth = 3;
@@ -747,12 +814,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- 4. Inputs & Actions Handler ---
 
-  let customColorHsv = { h: 152, s: 0.27, v: 0.9 };
+  let customHue = 145;
+  const FIXED_COLOR_SATURATION = 0.95;
+  const FIXED_COLOR_VALUE = 0.95;
 
   function applySelectedColor(color, syncPicker = true) {
     if (!/^#[0-9a-fA-F]{6}$/.test(color)) return;
     myColor = color.toLowerCase();
-    if (syncPicker) customColorHsv = hexToHsv(myColor);
+    if (syncPicker) customHue = hexToHue(myColor);
     if (selectedColorPreview) selectedColorPreview.style.backgroundColor = myColor;
     if (colorPickerValue) colorPickerValue.textContent = myColor;
     updateCustomColorPicker();
@@ -763,16 +832,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateCustomColorPicker() {
-    if (hueSlider) hueSlider.value = String(Math.round(customColorHsv.h));
-    if (colorPlane) {
-      colorPlane.style.background = [
-        'linear-gradient(to top, #000000, rgba(0, 0, 0, 0))',
-        `linear-gradient(to right, #ffffff, hsl(${customColorHsv.h}, 100%, 50%))`
-      ].join(', ');
-    }
-    if (colorPlaneHandle) {
-      colorPlaneHandle.style.left = `${customColorHsv.s * 100}%`;
-      colorPlaneHandle.style.top = `${(1 - customColorHsv.v) * 100}%`;
+    if (hueSlider) {
+      hueSlider.value = String(Math.round(customHue));
+      hueSlider.style.setProperty('--selected-hue-color', myColor);
     }
   }
 
@@ -796,7 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('')}`;
   }
 
-  function hexToHsv(hex) {
+  function hexToHue(hex) {
     const value = hex.replace('#', '');
     const r = parseInt(value.substring(0, 2), 16) / 255;
     const g = parseInt(value.substring(2, 4), 16) / 255;
@@ -811,28 +873,14 @@ document.addEventListener('DOMContentLoaded', () => {
       else h = 60 * ((r - g) / delta + 4);
     }
     if (h < 0) h += 360;
-    return {
-      h,
-      s: max === 0 ? 0 : delta / max,
-      v: max
-    };
-  }
-
-  function setColorFromPlane(clientX, clientY) {
-    if (!colorPlane) return;
-    const rect = colorPlane.getBoundingClientRect();
-    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-    const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
-    customColorHsv.s = rect.width === 0 ? 0 : x / rect.width;
-    customColorHsv.v = rect.height === 0 ? 0 : 1 - y / rect.height;
-    applySelectedColor(hsvToHex(customColorHsv.h, customColorHsv.s, customColorHsv.v), false);
+    return h;
   }
 
   if (colorPalette) {
     colorPalette.addEventListener('click', (event) => {
       const swatch = event.target.closest('.color-swatch');
       if (!swatch) return;
-      applySelectedColor(swatch.dataset.color || '#a8e6cf');
+      applySelectedColor(swatch.dataset.color || '#00e676');
     });
     applySelectedColor(myColor);
   }
@@ -849,21 +897,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (colorPlane) {
-    colorPlane.addEventListener('pointerdown', (event) => {
-      colorPlane.setPointerCapture(event.pointerId);
-      setColorFromPlane(event.clientX, event.clientY);
-    });
-    colorPlane.addEventListener('pointermove', (event) => {
-      if (event.buttons !== 1) return;
-      setColorFromPlane(event.clientX, event.clientY);
-    });
-  }
-
   if (hueSlider) {
     hueSlider.addEventListener('input', () => {
-      customColorHsv.h = Number(hueSlider.value) || 0;
-      applySelectedColor(hsvToHex(customColorHsv.h, customColorHsv.s, customColorHsv.v), false);
+      customHue = Number(hueSlider.value) || 0;
+      applySelectedColor(hsvToHex(customHue, FIXED_COLOR_SATURATION, FIXED_COLOR_VALUE), false);
     });
   }
 
@@ -949,17 +986,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  if (btnJump) {
-    btnJump.addEventListener('click', () => {
-      if (myState !== 'Alive' || currentGameState !== 'Playing') return;
-      jumpSeq += 1;
+  if (btnEmote) {
+    btnEmote.addEventListener('click', () => {
+      if (!canSendControllerInput()) return;
+      emoteSeq += 1;
       sendInputToServer(lastSentVector.x, lastSentVector.y);
     });
   }
 
-  if (btnEmote) {
-    btnEmote.addEventListener('click', () => {
-      if (myState !== 'Alive' || currentGameState !== 'Playing') return;
+  if (resultBtnEmote) {
+    resultBtnEmote.addEventListener('click', () => {
+      if (!canSendControllerInput()) return;
       emoteSeq += 1;
       sendInputToServer(lastSentVector.x, lastSentVector.y);
     });
@@ -970,7 +1007,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (inputInterval) return;
     
     inputInterval = setInterval(() => {
-      if (myState === 'Alive' && currentGameState === 'Playing') {
+      if (canSendControllerInput()) {
         // Send inputs
         sendInputToServer(lastSentVector.x, lastSentVector.y);
       }
@@ -984,7 +1021,6 @@ document.addEventListener('DOMContentLoaded', () => {
       inputInterval = null;
     }
     lastSentVector = { x: 0, y: 0 };
-    jumpSeq = 0;
     emoteSeq = 0;
   }
 
@@ -994,13 +1030,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (joystickInstance && typeof joystickInstance.forceRelease === 'function') {
       joystickInstance.forceRelease();
     }
-    if (currentGameState === 'Playing' && myState === 'Alive' && hadInput) {
+    if (resultJoystickInstance && typeof resultJoystickInstance.forceRelease === 'function') {
+      resultJoystickInstance.forceRelease();
+    }
+    if (canSendControllerInput() && hadInput) {
       sendInputToServer(0, 0);
     }
   }
 
   function sendInputToServer(x, y) {
-    socket.emit('moveInput', { moveX: x, moveY: y, jumpSeq, emoteSeq });
+    socket.emit('moveInput', { moveX: x, moveY: y, emoteSeq });
   }
 
   document.addEventListener('visibilitychange', () => {

@@ -532,7 +532,7 @@ components:
           example: mimi
         color:
           type: string
-          example: "#a8e6cf"
+          example: "#00e676"
         state:
           $ref: "#/components/schemas/PlayerState"
         gold:

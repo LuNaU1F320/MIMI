@@ -54,7 +54,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
   private final AtomicLong lastUnrealInputsBroadcastAt = new AtomicLong(0);
   private final AtomicInteger lastUnrealWorldStateUpdatedCount = new AtomicInteger(0);
   private static final long POSITION_BROADCAST_INTERVAL_MS = 200;
-  private static final double MOBILE_MINIMAP_RANGE = 25.0;
+  private static final double MOBILE_MINIMAP_RANGE = 32.0;
   private static final int SEND_TIME_LIMIT_MS = 5000;
   private static final int SEND_BUFFER_SIZE_LIMIT_BYTES = 512 * 1024;
 

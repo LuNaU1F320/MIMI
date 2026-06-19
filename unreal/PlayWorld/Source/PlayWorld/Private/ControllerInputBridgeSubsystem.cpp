@@ -163,10 +163,11 @@ void UControllerInputBridgeSubsystem::ApplySettings(const FControllerInputBridge
 		PlayerCharacterClass = DefaultPlayerCharacterClass();
 	}
 	ControlledCharacter = InSettings.ControlledCharacter;
-	MaxDemoPlayers = FMath::Clamp(InSettings.MaxDemoPlayers, 1, 4);
+	MaxDemoPlayers = FMath::Clamp(InSettings.MaxDemoPlayers, 1, 64);
 	MaxDemoBots = FMath::Max(0, InSettings.MaxDemoBots);
 	PlayerSpawnSpacing = InSettings.PlayerSpawnSpacing;
 	ServerBaseUrl = InSettings.ServerBaseUrl;
+	bStartServerProcess = InSettings.bStartServerProcess;
 	PollingInterval = FMath::Max(0.05f, InSettings.PollingInterval);
 	bLogPollingDebug = InSettings.bLogPollingDebug;
 	BotCount = FMath::Max(0, InSettings.BotCount);
@@ -933,9 +934,16 @@ void UControllerInputBridgeSubsystem::HandleWebSocketMessage(const FString& Mess
 
 	if (MsgType.Equals(TEXT("inputsUpdated"), ESearchCase::IgnoreCase))
 	{
+		bool bFullSnapshot = false;
+		RootObject->TryGetBoolField(TEXT("fullSnapshot"), bFullSnapshot);
+
 		const TArray<TSharedPtr<FJsonValue>>* Inputs = nullptr;
 		if (!RootObject->TryGetArrayField(TEXT("inputs"), Inputs) || !Inputs || Inputs->Num() == 0)
 		{
+			if (bFullSnapshot)
+			{
+				StopDemoCharacters();
+			}
 			return;
 		}
 
@@ -989,6 +997,40 @@ void UControllerInputBridgeSubsystem::HandleWebSocketMessage(const FString& Mess
 					++AppliedPlayerCount;
 				}
 			}
+		}
+
+		if (bFullSnapshot)
+		{
+			for (const TPair<FString, TObjectPtr<AMyCharacter>>& PlayerPair : PlayerCharactersById)
+			{
+				if (!SeenPlayerIds.Contains(PlayerPair.Key) && PlayerPair.Value)
+				{
+					if (!ShouldPreserveWinnerControl(PlayerPair.Value.Get()))
+					{
+						PlayerPair.Value->SetMoveInput(0.0f, 0.0f);
+					}
+				}
+			}
+
+			for (const TPair<FString, TObjectPtr<AMyCharacter>>& BotPair : BotCharactersById)
+			{
+				if (!SeenBotIds.Contains(BotPair.Key) && BotPair.Value)
+				{
+					if (!ShouldPreserveWinnerControl(BotPair.Value.Get()))
+					{
+						BotPair.Value->SetMoveInput(0.0f, 0.0f);
+					}
+				}
+			}
+		}
+	}
+	else if (MsgType.Equals(TEXT("resetGame"), ESearchCase::IgnoreCase))
+	{
+		StopDemoCharacters();
+
+		if (UShowdownBattleRoyaleSubsystem* BattleRoyaleSubsystem = GetBattleRoyaleSubsystem())
+		{
+			BattleRoyaleSubsystem->ResetBattleRoyale();
 		}
 	}
 	else if (MsgType.Equals(TEXT("gameStateChanged"), ESearchCase::IgnoreCase))

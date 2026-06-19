@@ -39,7 +39,7 @@ protected:
 	FString ServerBaseUrl = TEXT("http://localhost:3000");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
-	bool bStartServerProcess = true;
+	bool bStartServerProcess = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "0.05"))
 	float PollingInterval = 0.1f;

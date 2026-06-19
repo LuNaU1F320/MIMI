@@ -23,8 +23,8 @@ struct PLAYWORLD_API FControllerInputBridgeSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
 	TObjectPtr<AMyCharacter> ControlledCharacter;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "1", ClampMax = "4"))
-	int32 MaxDemoPlayers = 4;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "1", ClampMax = "64"))
+	int32 MaxDemoPlayers = 64;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "0"))
 	int32 MaxDemoBots = 20;
@@ -36,7 +36,7 @@ struct PLAYWORLD_API FControllerInputBridgeSettings
 	FString ServerBaseUrl = TEXT("http://localhost:3000");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
-	bool bStartServerProcess = true;
+	bool bStartServerProcess = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "0.05"))
 	float PollingInterval = 0.1f;
@@ -110,11 +110,11 @@ private:
 	UPROPERTY()
 	TObjectPtr<AMyCharacter> ControlledCharacter;
 
-	int32 MaxDemoPlayers = 4;
+	int32 MaxDemoPlayers = 64;
 	int32 MaxDemoBots = 20;
 	FVector2D PlayerSpawnSpacing = FVector2D(250.0f, 250.0f);
 	FString ServerBaseUrl = TEXT("http://localhost:3000");
-	bool bStartServerProcess = true;
+	bool bStartServerProcess = false;
 	float PollingInterval = 0.1f;
 	bool bLogPollingDebug = true;
 	int32 BotCount = 0;
