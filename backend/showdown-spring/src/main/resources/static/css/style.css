@@ -1,0 +1,232 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+
+:root {
+  /* Color System - Soft Pastels */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-light: #94a3b8;
+
+  --color-mint: #a8e6cf;
+  --color-mint-hover: #8fd4bb;
+  --color-mint-light: #f0fdf4;
+  --color-mint-border: #bbf7d0;
+  --color-mint-text: #15803d;
+
+  --color-coral: #ffd3b6;
+  --color-coral-hover: #ffc49e;
+  --color-coral-light: #fffaf0;
+  --color-coral-border: #ffedd5;
+  --color-coral-text: #c2410c;
+
+  --color-blue: #a8d8ea;
+  --color-blue-hover: #8ec3d9;
+  --color-blue-light: #f0f9ff;
+  --color-blue-border: #e0f2fe;
+  --color-blue-text: #0369a1;
+
+  --color-lavender: #dcedc1;
+  --color-lavender-light: #f3f9eb;
+  --color-lavender-text: #4d7c0f;
+
+  --color-peach: #ffaaa6;
+  --color-peach-light: #fef2f2;
+  --color-peach-text: #b91c1c;
+
+  /* Fonts */
+  --font-header: 'Outfit', 'Noto Sans KR', sans-serif;
+  --font-body: 'Inter', 'Noto Sans KR', sans-serif;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(148, 163, 184, 0.05);
+  --shadow-md: 0 10px 25px -5px rgba(148, 163, 184, 0.1), 0 8px 10px -6px rgba(148, 163, 184, 0.1);
+  --shadow-lg: 0 20px 25px -5px rgba(148, 163, 184, 0.15), 0 10px 10px -5px rgba(148, 163, 184, 0.15);
+  --shadow-inset: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+
+  /* Radius */
+  --radius-sm: 10px;
+  --radius-md: 18px;
+  --radius-lg: 28px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Reset */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-header);
+  font-weight: 700;
+}
+
+/* Common Layout Utilities */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-header);
+  font-weight: 600;
+  padding: 14px 28px;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 1rem;
+  box-shadow: var(--shadow-sm);
+  outline: none;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background-color: var(--color-mint);
+  color: var(--color-mint-text);
+  border: 1px solid var(--color-mint-border);
+}
+
+.btn-primary:hover {
+  background-color: var(--color-mint-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+  background-color: var(--color-blue);
+  color: var(--color-blue-text);
+  border: 1px solid var(--color-blue-border);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-blue-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-accent {
+  background-color: var(--color-coral);
+  color: var(--color-coral-text);
+  border: 1px solid var(--color-coral-border);
+}
+
+.btn-accent:hover {
+  background-color: var(--color-coral-hover);
+  box-shadow: var(--shadow-md);
+}
+
+/* Forms */
+.input-group {
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.input-label {
+  display: block;
+  font-family: var(--font-header);
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.input-field {
+  width: 100%;
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--bg-tertiary);
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  transition: all var(--transition-fast);
+  outline: none;
+  box-shadow: var(--shadow-inset);
+}
+
+.input-field:focus {
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 4px rgba(168, 216, 234, 0.3);
+}
+
+/* Card components */
+.card {
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  box-shadow: var(--shadow-md);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Screen Transitions */
+.screen {
+  display: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+  width: 100%;
+  height: 100%;
+}
+
+.screen.active {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+}
+
+/* Water Ripple effect */
+.ripple-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(168, 216, 234, 0.4) 0%, rgba(168, 230, 207, 0.1) 70%, rgba(255, 255, 255, 0) 100%);
+  transform: scale(0);
+  animation: ripple-animation 0.6s ease-out;
+  pointer-events: none;
+}
+
+@keyframes ripple-animation {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
