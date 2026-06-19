@@ -1,0 +1,339 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Showdown Live API",
+    "description": "Showdown Live 관객 참여형 실시간 배틀로얄 게임 백엔드 API 명세서",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "로컬 개발 서버"
+    }
+  ],
+  "paths": {
+    "/api/host-info": {
+      "get": {
+        "summary": "서버 호스트 정보 조회",
+        "description": "로컬 IP 포트번호 및 Cloudflare 터널링 도메인 주소를 반환합니다.",
+        "responses": {
+          "200": {
+            "description": "호스트 정보 수신 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "localIp": { "type": "string" },
+                    "port": { "type": "integer" },
+                    "tunnelUrl": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/status": {
+      "get": {
+        "summary": "게임 전체 상태 조회",
+        "description": "현재 게임 페이즈, 접속 플레이어 리스트, 랭킹 및 상점/투표/응원 누적 카운트를 조회합니다.",
+        "responses": {
+          "200": {
+            "description": "게임 상태 조회 성공"
+          }
+        }
+      }
+    },
+    "/api/join": {
+      "post": {
+        "summary": "신규 플레이어 참가 등록",
+        "description": "닉네임을 전송하고 모바일 클라이언트 세션에 바인딩할 playerId를 발급받습니다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nickname": { "type": "string", "maxLength": 8 }
+                },
+                "required": ["nickname"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "참가 등록 성공"
+          },
+          "400": {
+            "description": "잘못된 닉네임 형식"
+          }
+        }
+      }
+    },
+    "/api/input": {
+      "post": {
+        "summary": "이동 방향 입력 전달 (HTTP)",
+        "description": "웹소켓 연결이 원활하지 않을 때 HTTP POST 폴링으로 이동 벡터를 전송합니다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "playerId": { "type": "string" },
+                  "moveX": { "type": "number", "minimum": -1, "maximum": 1 },
+                  "moveY": { "type": "number", "minimum": -1, "maximum": 1 }
+                },
+                "required": ["playerId", "moveX", "moveY"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "입력 수신 성공"
+          }
+        }
+      }
+    },
+    "/api/shop": {
+      "get": {
+        "summary": "상점 아이템 목록 조회",
+        "description": "상점 페이즈에 장착 가능한 패시브 아이템의 목록과 실시간 재고를 조회합니다.",
+        "responses": {
+          "200": {
+            "description": "상점 조회 성공"
+          }
+        }
+      }
+    },
+    "/api/buy": {
+      "post": {
+        "summary": "상점 아이템 선착순 구매",
+        "description": "플레이어가 1개의 패시브 아이템을 선착순으로 구매하여 장착합니다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "playerId": { "type": "string" },
+                  "itemId": { "type": "string" }
+                },
+                "required": ["playerId", "itemId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "아이템 구매 완료"
+          },
+          "400": {
+            "description": "상점 오픈 상태가 아니거나 재고가 없음"
+          }
+        }
+      }
+    },
+    "/api/vote": {
+      "post": {
+        "summary": "사망 관객 이벤트 투표",
+        "description": "탈락한 관객이 게임에 적용할 맵 특수 이벤트를 투표합니다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "playerId": { "type": "string" },
+                  "eventType": { "type": "string", "enum": ["HealZone", "SpeedUp", "ShrinkZone", "SupplyBox"] }
+                },
+                "required": ["playerId", "eventType"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "투표 등록 완료"
+          }
+        }
+      }
+    },
+    "/api/cheer": {
+      "post": {
+        "summary": "사망 관객의 생존자 응원",
+        "description": "사망한 플레이어가 특정 생존 플레이어에게 응원 카운트를 추가합니다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "playerId": { "type": "string" },
+                  "targetId": { "type": "string" }
+                },
+                "required": ["playerId", "targetId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "응원 등록 완료"
+          }
+        }
+      }
+    },
+    "/api/history": {
+      "get": {
+        "summary": "이전 매치 결과 조회",
+        "description": "저장된 최근 50개 매치 결과 리스트를 반환합니다.",
+        "responses": {
+          "200": {
+            "description": "히스토리 조회 성공"
+          }
+        }
+      }
+    },
+    "/api/unreal/players": {
+      "get": {
+        "summary": "[Unreal 전용] 플레이어 목록 조회",
+        "description": "언리얼 게임 월드 생성을 위해 모든 접속 유닛 및 봇 목록을 반환합니다.",
+        "responses": {
+          "200": {
+            "description": "유닛 조회 완료"
+          }
+        }
+      }
+    },
+    "/api/unreal/inputs": {
+      "get": {
+        "summary": "[Unreal 전용] 실시간 입력 조회",
+        "description": "모든 활성 플레이어의 입력 벡터 배열을 조회합니다 (HTTP 폴링용).",
+        "responses": {
+          "200": {
+            "description": "입력 조회 성공"
+          }
+        }
+      }
+    },
+    "/api/unreal/player-state": {
+      "post": {
+        "summary": "[Unreal 전용] 플레이어 상태 변경",
+        "description": "언리얼 충돌/생존 판정에 따라 플레이어의 상태(Dead 등)를 갱신합니다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "playerId": { "type": "string" },
+                  "state": { "type": "string", "enum": ["Alive", "Dead", "Winner", "Spectator"] }
+                },
+                "required": ["playerId", "state"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "상태 변경 성공"
+          }
+        }
+      }
+    },
+    "/api/unreal/result": {
+      "post": {
+        "summary": "[Unreal/Host 전용] 게임 매치 결과 제출",
+        "description": "우승자 확정 시 우승자 ID 및 최종 순위 목록을 백엔드에 제출하여 저장합니다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "winnerId": { "type": "string" },
+                  "rankingList": { "type": "array", "items": { "type": "object" } }
+                },
+                "required": ["winnerId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "결과 제출 성공"
+          }
+        }
+      }
+    },
+    "/api/admin/start-shop": {
+      "post": {
+        "summary": "[Admin] 상점 상태 활성화",
+        "description": "대기방에서 게임 시작 전 선착순 무기 상점을 활성화합니다.",
+        "responses": {
+          "200": {
+            "description": "상점 개방 완료"
+          }
+        }
+      }
+    },
+    "/api/admin/start-game": {
+      "post": {
+        "summary": "[Admin] 서바이벌 게임 시작",
+        "description": "플레이어들을 Alive 상태로 셋팅하고 10Hz 서버 사이드 물리 엔진 루프를 가동합니다.",
+        "responses": {
+          "200": {
+            "description": "게임 시작 완료"
+          }
+        }
+      }
+    },
+    "/api/admin/reset": {
+      "post": {
+        "summary": "[Admin] 게임 완전 초기화",
+        "description": "게임 전체 상태를 Lobby로 초기화하고 봇을 제거하며 상점 재고를 복구합니다.",
+        "responses": {
+          "200": {
+            "description": "초기화 완료"
+          }
+        }
+      }
+    },
+    "/api/admin/add-bots": {
+      "post": {
+        "summary": "[Admin] 테스트용 봇 스폰",
+        "description": "서버 시뮬레이션용 가상 봇 플레이어를 스폰합니다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "count": { "type": "integer", "default": 5 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "봇 추가 완료"
+          }
+        }
+      }
+    }
+  }
+}

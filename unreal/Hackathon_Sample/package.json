@@ -1,0 +1,15 @@
+{
+  "name": "showdown-live",
+  "version": "1.0.0",
+  "description": "Real-time audience battle royale game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "ws": "^8.21.0"
+  }
+}
