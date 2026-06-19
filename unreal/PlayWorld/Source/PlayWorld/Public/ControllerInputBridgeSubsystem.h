@@ -163,6 +163,7 @@ private:
 	TMap<FString, TObjectPtr<AMyCharacter>> PlayerCharactersById;
 	TMap<FString, TObjectPtr<AMyCharacter>> BotCharactersById;
 	TMap<FString, FVector2D> PlayerInitialPercentageMap;
+	TMap<FString, int64> LastEmoteSeqByPlayerId;
 	TSharedPtr<IWebSocket> UnrealWebSocket;
 
 	void ApplySettings(const FControllerInputBridgeSettings& InSettings);
@@ -176,6 +177,7 @@ private:
 	void HandleWorldStateResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful);
 	void ApplyMoveInput(const FString& PlayerId, float MoveX, float MoveY);
 	void ApplyBotMoveInput(const FString& BotId, float MoveX, float MoveY);
+	void ApplyEmoteInput(const FString& PlayerId, int64 EmoteSeq);
 	void StopDemoCharacters();
 	bool ShouldPreserveWinnerControl(const AMyCharacter* Character) const;
 	AMyCharacter* FindExistingCharacter() const;
