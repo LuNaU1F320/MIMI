@@ -1,7 +1,7 @@
 @echo off
-title Showdown Live Spring Server Local
+title MIMI Spring Server Local
 echo ===================================================
-echo  Showdown Live Spring Server Local Only
+echo  MIMI Spring Server Local Only
 echo ===================================================
 echo.
 

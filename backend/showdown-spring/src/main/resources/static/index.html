@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Showdown Live Client</title>
+  <title>MIMI Client</title>
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/mobile.css">
@@ -15,7 +15,7 @@
 
     <!-- App Header -->
     <header class="app-header">
-      <h1 class="app-title">SHOWDOWN LIVE</h1>
+      <h1 class="app-title">MIMI</h1>
       <p class="app-subtitle" id="connection-status">서버 연결 중...</p>
     </header>
 
@@ -35,24 +35,21 @@
             <label class="input-label">캐릭터 색상</label>
             <div class="color-picker-summary">
               <span class="selected-color-preview" id="selected-color-preview" aria-hidden="true"></span>
-              <span class="color-picker-value" id="color-picker-value">#a8e6cf</span>
+              <span class="color-picker-value" id="color-picker-value">#00e676</span>
               <button type="button" class="btn btn-secondary color-custom-button" id="btn-custom-color">사용자 설정</button>
             </div>
             <div class="custom-color-panel" id="custom-color-panel" hidden>
-              <div class="color-plane" id="color-plane">
-                <span class="color-plane-handle" id="color-plane-handle"></span>
-              </div>
-              <input type="range" class="hue-slider" id="hue-slider" min="0" max="360" value="152" aria-label="색조">
+              <input type="range" class="hue-slider" id="hue-slider" min="0" max="360" value="145" aria-label="캐릭터 색상값">
             </div>
             <div class="color-palette" id="color-palette" aria-label="캐릭터 색상 선택">
-              <button type="button" class="color-swatch selected" data-color="#a8e6cf" style="--swatch-color: #a8e6cf;" aria-label="민트"></button>
-              <button type="button" class="color-swatch" data-color="#a8d8ea" style="--swatch-color: #a8d8ea;" aria-label="블루"></button>
-              <button type="button" class="color-swatch" data-color="#ffaaa6" style="--swatch-color: #ffaaa6;" aria-label="코랄"></button>
-              <button type="button" class="color-swatch" data-color="#ffd3b6" style="--swatch-color: #ffd3b6;" aria-label="피치"></button>
-              <button type="button" class="color-swatch" data-color="#dcedc1" style="--swatch-color: #dcedc1;" aria-label="라임"></button>
-              <button type="button" class="color-swatch" data-color="#c7ceea" style="--swatch-color: #c7ceea;" aria-label="라벤더"></button>
-              <button type="button" class="color-swatch" data-color="#f6c1ff" style="--swatch-color: #f6c1ff;" aria-label="핑크"></button>
-              <button type="button" class="color-swatch" data-color="#f9f7a1" style="--swatch-color: #f9f7a1;" aria-label="옐로"></button>
+              <button type="button" class="color-swatch selected" data-color="#00e676" style="--swatch-color: #00e676;" aria-label="그린"></button>
+              <button type="button" class="color-swatch" data-color="#00d5ff" style="--swatch-color: #00d5ff;" aria-label="시안"></button>
+              <button type="button" class="color-swatch" data-color="#2979ff" style="--swatch-color: #2979ff;" aria-label="블루"></button>
+              <button type="button" class="color-swatch" data-color="#7c4dff" style="--swatch-color: #7c4dff;" aria-label="바이올렛"></button>
+              <button type="button" class="color-swatch" data-color="#ff2d95" style="--swatch-color: #ff2d95;" aria-label="마젠타"></button>
+              <button type="button" class="color-swatch" data-color="#ff1744" style="--swatch-color: #ff1744;" aria-label="레드"></button>
+              <button type="button" class="color-swatch" data-color="#ff9100" style="--swatch-color: #ff9100;" aria-label="오렌지"></button>
+              <button type="button" class="color-swatch" data-color="#ffd600" style="--swatch-color: #ffd600;" aria-label="옐로"></button>
             </div>
           </div>
           <button id="btn-join" class="btn btn-primary">입장하기</button>
@@ -135,8 +132,12 @@
             </div>
 
             <div class="action-buttons" id="action-buttons">
-              <button type="button" class="action-button jump" id="btn-jump">JUMP</button>
               <button type="button" class="action-button emote" id="btn-emote">EMOTE</button>
+            </div>
+
+            <div class="controller-state-overlay" id="controller-state-overlay" hidden>
+              <p class="controller-state-title" id="controller-state-title">탈락</p>
+              <p class="controller-state-desc" id="controller-state-desc">전투에서 탈락했습니다.</p>
             </div>
           </div>
 
@@ -169,6 +170,15 @@
               <p class="result-stat-label">참가 일시</p>
               <p class="result-stat-value" id="result-time-txt">방금</p>
             </div>
+          </div>
+
+          <div class="result-controller-panel" id="result-controller-panel" hidden>
+            <p class="result-controller-label">우승자 컨트롤러</p>
+            <div class="result-joystick-track" id="result-joystick-track">
+              <div class="result-joystick-knob" id="result-joystick-knob"></div>
+            </div>
+            <p class="result-joystick-values" id="result-joystick-debug">X: 0.00, Y: 0.00</p>
+            <button type="button" class="action-button emote result-emote-button" id="result-btn-emote">EMOTE</button>
           </div>
 
           <button id="btn-lobby-return" class="btn btn-primary">대기방으로</button>

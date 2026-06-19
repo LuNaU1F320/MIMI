@@ -8,6 +8,7 @@
 
 class UBoxComponent;
 class UCharacterEquipmentComponent;
+class UEmoteComponent;
 class USceneComponent;
 class UStaticMeshComponent;
 class UZoneDamageReceiverComponent;
@@ -64,8 +65,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Visual")
 	void SetOverlayColor(FLinearColor Color);
 
+	UFUNCTION(BlueprintCallable, Category = "Emote")
+	void PlayEmote(FString EmoteName, float PlayRate = 1.0f);
+
 	UCharacterEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
 	UZoneDamageReceiverComponent* GetZoneDamageReceiverComponent() const { return ZoneDamageReceiverComponent; }
+	UEmoteComponent* GetEmoteComponent() const { return EmoteComponent; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -78,6 +83,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleRoyale")
 	TObjectPtr<UZoneDamageReceiverComponent> ZoneDamageReceiverComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Emote")
+	TObjectPtr<UEmoteComponent> EmoteComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UBoxComponent> AttackBox;

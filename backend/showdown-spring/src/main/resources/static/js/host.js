@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       // Load QR code with the best available join URL
-      qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
+      qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=700x700&data=${encodeURIComponent(joinUrl)}`;
       qrCodeImg.onload = () => {
         qrPlaceholder.style.display = 'none';
         qrCodeImg.style.display = 'block';
@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
     .catch(err => {
       console.error('Failed to fetch host network info, falling back to window.location.origin:', err);
       // Fallback to page location if API fails
-      qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
+      qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=700x700&data=${encodeURIComponent(joinUrl)}`;
       qrCodeImg.onload = () => {
         qrPlaceholder.style.display = 'none';
         qrCodeImg.style.display = 'block';
@@ -153,26 +153,26 @@ document.addEventListener('DOMContentLoaded', () => {
       gameStateBadge.style.color = 'var(--color-blue-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'none';
-      btnShop.disabled = false;
+      if (btnShop) btnShop.disabled = false;
       btnStart.disabled = false;
       if (stateChanged) stopGameLoop();
     } else if (data.gameState === 'Shop') {
       gameStateBadge.style.color = 'var(--color-mint-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'none';
-      btnShop.disabled = true;
+      if (btnShop) btnShop.disabled = true;
       btnStart.disabled = false;
       if (stateChanged) stopGameLoop();
     } else if (data.gameState === 'Playing') {
       gameStateBadge.style.color = 'var(--color-peach-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'block';
-      btnShop.disabled = true;
+      if (btnShop) btnShop.disabled = true;
       btnStart.disabled = true;
       if (stateChanged || rosterChanged) startGameLoop(playersList);
     } else if (data.gameState === 'Result') {
       gameStateBadge.style.color = 'var(--color-coral-text)';
-      btnShop.disabled = true;
+      if (btnShop) btnShop.disabled = true;
       btnStart.disabled = true;
       arenaWrapper.style.display = 'none';
       if (stateChanged) stopGameLoop();
@@ -511,9 +511,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- 4. Controls Handlers ---
 
-  btnShop.addEventListener('click', () => {
-    socket.emit('adminStartShop');
-  });
+  if (btnShop) {
+    btnShop.addEventListener('click', () => {
+      socket.emit('adminStartShop');
+    });
+  }
 
   btnStart.addEventListener('click', () => {
     socket.emit('adminStartGame');

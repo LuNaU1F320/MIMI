@@ -35,8 +35,8 @@ public class GameService {
       "토끼", "호랑이", "사자", "곰", "여우", "늑대", "독수리", "부엉이", "람쥐", "거북이"
   };
   private static final String[] PLAYER_COLORS = {
-      "#a8e6cf", "#a8d8ea", "#ffaaa6", "#ffd3b6", "#dcedc1", "#c7ceea",
-      "#f6c1ff", "#f9f7a1", "#b5ead7", "#ffdac1", "#e2f0cb", "#b5b9ff"
+      "#00e676", "#00d5ff", "#2979ff", "#7c4dff", "#ff2d95", "#ff1744",
+      "#ff9100", "#ffd600", "#00c853", "#00b8d4", "#304ffe", "#d500f9"
   };
 
   public GameService(PersistenceService persistenceService) {
@@ -131,7 +131,9 @@ public class GameService {
 
   public synchronized Player updateInput(String playerId, double moveX, double moveY, Long jumpSeq, Long emoteSeq) {
     Player player = players.get(playerId);
-    if (player == null || !gameState.equals("Playing")) {
+    boolean acceptsGameplayInput = gameState.equals("Playing") && player != null;
+    boolean acceptsWinnerResultInput = gameState.equals("Result") && player != null && player.state.equals("Winner");
+    if (player == null || (!acceptsGameplayInput && !acceptsWinnerResultInput)) {
       return null;
     }
 

@@ -93,7 +93,8 @@ void UControllerInputBridgeSubsystem::ConfigureAndStart(const FControllerInputBr
 
 	if (bStartServerProcess)
 	{
-		StartServerProcess();
+		UE_LOG(LogTemp, Warning, TEXT("[Subsystem] Ignoring bStartServerProcess=true. Use the Spring backend batch file instead of starting the bundled Node.js server from Unreal."));
+		bStartServerProcess = false;
 	}
 
 	InitializeDemoCharacters();
@@ -163,10 +164,13 @@ void UControllerInputBridgeSubsystem::ApplySettings(const FControllerInputBridge
 		PlayerCharacterClass = DefaultPlayerCharacterClass();
 	}
 	ControlledCharacter = InSettings.ControlledCharacter;
-	MaxDemoPlayers = FMath::Clamp(InSettings.MaxDemoPlayers, 1, 4);
+	MaxDemoPlayers = FMath::Clamp(InSettings.MaxDemoPlayers, 1, 64);
 	MaxDemoBots = FMath::Max(0, InSettings.MaxDemoBots);
 	PlayerSpawnSpacing = InSettings.PlayerSpawnSpacing;
 	ServerBaseUrl = InSettings.ServerBaseUrl;
+	// The presentation flow uses the Spring backend on port 3000. Some merged maps/actors may still
+	// carry an old serialized value that asks Unreal to launch the bundled Node sample server.
+	bStartServerProcess = false;
 	PollingInterval = FMath::Max(0.05f, InSettings.PollingInterval);
 	bLogPollingDebug = InSettings.bLogPollingDebug;
 	BotCount = FMath::Max(0, InSettings.BotCount);
@@ -564,6 +568,45 @@ void UControllerInputBridgeSubsystem::ApplyBotMoveInput(const FString& BotId, fl
 	BotCharacter->SetMoveInput(MoveX, MoveY);
 }
 
+void UControllerInputBridgeSubsystem::ApplyEmoteInput(const FString& PlayerId, int64 EmoteSeq)
+{
+	AMyCharacter* PlayerCharacter = GetOrCreatePlayerCharacter(PlayerId);
+	if (!PlayerCharacter)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[ControllerInputBridge] ApplyEmoteInput: Player character not found for ID: %s"), *PlayerId);
+		return;
+	}
+
+	// If emoteSeq is reset to 0 (e.g. from mobile stopping input), sync our record to 0
+	if (EmoteSeq == 0)
+	{
+		LastEmoteSeqByPlayerId.Add(PlayerId, 0);
+		return;
+	}
+
+	int64* LastSeq = LastEmoteSeqByPlayerId.Find(PlayerId);
+	if (!LastSeq)
+	{
+		LastEmoteSeqByPlayerId.Add(PlayerId, EmoteSeq);
+		UE_LOG(LogTemp, Log, TEXT("[ControllerInputBridge] First emote seq for player %s is %lld"), *PlayerId, EmoteSeq);
+		
+		// If the first received sequence is already greater than 0, play it immediately
+		if (EmoteSeq > 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[ControllerInputBridge] Playing initial emote for player %s (seq: %lld)"), *PlayerId, EmoteSeq);
+			PlayerCharacter->PlayEmote(TEXT("Default"), 1.0f);
+		}
+		return;
+	}
+
+	if (EmoteSeq > *LastSeq)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[ControllerInputBridge] Emote seq advanced for player %s: %lld -> %lld. Playing emote."), *PlayerId, *LastSeq, EmoteSeq);
+		LastEmoteSeqByPlayerId.Add(PlayerId, EmoteSeq);
+		PlayerCharacter->PlayEmote(TEXT("Default"), 1.0f);
+	}
+}
+
 void UControllerInputBridgeSubsystem::StopDemoCharacters()
 {
 	for (const TObjectPtr<AMyCharacter>& DemoPlayerCharacter : DemoPlayerCharacters)
@@ -933,9 +976,16 @@ void UControllerInputBridgeSubsystem::HandleWebSocketMessage(const FString& Mess
 
 	if (MsgType.Equals(TEXT("inputsUpdated"), ESearchCase::IgnoreCase))
 	{
+		bool bFullSnapshot = false;
+		RootObject->TryGetBoolField(TEXT("fullSnapshot"), bFullSnapshot);
+
 		const TArray<TSharedPtr<FJsonValue>>* Inputs = nullptr;
 		if (!RootObject->TryGetArrayField(TEXT("inputs"), Inputs) || !Inputs || Inputs->Num() == 0)
 		{
+			if (bFullSnapshot)
+			{
+				StopDemoCharacters();
+			}
 			return;
 		}
 
@@ -989,6 +1039,49 @@ void UControllerInputBridgeSubsystem::HandleWebSocketMessage(const FString& Mess
 					++AppliedPlayerCount;
 				}
 			}
+
+			double EmoteSeqDouble = 0.0;
+			if (InputObject->TryGetNumberField(TEXT("emoteSeq"), EmoteSeqDouble))
+			{
+				if (!PlayerId.StartsWith(TEXT("bot_")))
+				{
+					ApplyEmoteInput(PlayerId, static_cast<int64>(EmoteSeqDouble));
+				}
+			}
+		}
+
+		if (bFullSnapshot)
+		{
+			for (const TPair<FString, TObjectPtr<AMyCharacter>>& PlayerPair : PlayerCharactersById)
+			{
+				if (!SeenPlayerIds.Contains(PlayerPair.Key) && PlayerPair.Value)
+				{
+					if (!ShouldPreserveWinnerControl(PlayerPair.Value.Get()))
+					{
+						PlayerPair.Value->SetMoveInput(0.0f, 0.0f);
+					}
+				}
+			}
+
+			for (const TPair<FString, TObjectPtr<AMyCharacter>>& BotPair : BotCharactersById)
+			{
+				if (!SeenBotIds.Contains(BotPair.Key) && BotPair.Value)
+				{
+					if (!ShouldPreserveWinnerControl(BotPair.Value.Get()))
+					{
+						BotPair.Value->SetMoveInput(0.0f, 0.0f);
+					}
+				}
+			}
+		}
+	}
+	else if (MsgType.Equals(TEXT("resetGame"), ESearchCase::IgnoreCase))
+	{
+		StopDemoCharacters();
+
+		if (UShowdownBattleRoyaleSubsystem* BattleRoyaleSubsystem = GetBattleRoyaleSubsystem())
+		{
+			BattleRoyaleSubsystem->ResetBattleRoyale();
 		}
 	}
 	else if (MsgType.Equals(TEXT("gameStateChanged"), ESearchCase::IgnoreCase))
@@ -1056,6 +1149,12 @@ void UControllerInputBridgeSubsystem::HandleWebSocketMessage(const FString& Mess
 
 void UControllerInputBridgeSubsystem::StartServerProcess()
 {
+	if (!bStartServerProcess)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Subsystem] Node.js sample server autostart is disabled. Start the Spring backend with start-spring-tunnel.bat."));
+		return;
+	}
+
 	if (ServerProcessHandle.IsValid())
 	{
 		return;

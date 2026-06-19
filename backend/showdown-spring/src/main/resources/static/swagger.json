@@ -1,8 +1,8 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Showdown Live API",
-    "description": "Showdown Live 관객 참여형 실시간 배틀로얄 게임 백엔드 API 명세서",
+    "title": "MIMI API",
+    "description": "MIMI 관객 참여형 실시간 배틀로얄 게임 백엔드 API 명세서",
     "version": "1.0.0"
   },
   "servers": [
