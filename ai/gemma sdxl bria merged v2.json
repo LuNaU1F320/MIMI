@@ -1,0 +1,182 @@
+{
+  "11": {
+    "inputs": {
+      "clip_name": "gemma4_e2b_it_bf16.safetensors",
+      "type": "stable_diffusion",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "Gemma 로드 (CLIPLoader)" }
+  },
+  "12": {
+    "inputs": {
+      "value": "<|turn>system\nYou are an ITEM-NAME generator for a game cosmetic-asset pipeline.\nYou will receive a CATEGORY (examples: \"a thing to wear on the head\", \"a weapon used in games\").\nYOUR ONLY JOB: pick ONE specific, concrete item that belongs to that category, chosen RANDOMLY and differently every run.\n\nExamples:\n- category \"headwear\"  -> witch hat / straw hat / baseball cap / crown / beanie / top hat\n- category \"weapon\"    -> sword / axe / baseball bat / greatsword / pistol / spear\n\nRULES:\n- Output ONLY the item as a short English noun phrase (1-3 words).\n- Do NOT add colors, materials, art style, lighting, or ANY design adjectives. Design is handled by another part of the pipeline.\n- Do NOT write a sentence, explanation, or extra text.\n- Output STRICTLY as JSON in exactly this form: {\"prompt\": \"<item>\"}\n<|turn|>"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": { "title": "REWRITE_SYSTEM_PROMPT (여기 수정)" }
+  },
+  "1": {
+    "inputs": {
+      "string": "<|turn>user\n{user_prompt}<|turn|>\n<|turn>model\n",
+      "find": "{user_prompt}",
+      "replace": "a thing to wear on the head"
+    },
+    "class_type": "StringReplace",
+    "_meta": { "title": "유저 요청 (replace 칸을 바꿔서 입력)" }
+  },
+  "2": {
+    "inputs": {
+      "string_a": [ "12", 0 ],
+      "string_b": [ "1", 0 ],
+      "delimiter": ""
+    },
+    "class_type": "StringConcatenate",
+    "_meta": { "title": "시스템+유저 합치기" }
+  },
+  "3": {
+    "inputs": {
+      "prompt": [ "2", 0 ],
+      "max_length": 2048,
+      "sampling_mode": "on",
+      "sampling_mode.temperature": 0.7,
+      "sampling_mode.top_k": 64,
+      "sampling_mode.top_p": 0.95,
+      "sampling_mode.min_p": 0.05,
+      "sampling_mode.repetition_penalty": 1.05,
+      "sampling_mode.seed": 0,
+      "sampling_mode.presence_penalty": 0,
+      "thinking": false,
+      "use_default_template": false,
+      "clip": [ "11", 0 ]
+    },
+    "class_type": "TextGenerate",
+    "_meta": { "title": "Gemma 텍스트 생성" }
+  },
+  "7": {
+    "inputs": {
+      "string": [ "3", 0 ],
+      "regex_pattern": "^```(?:json)?\\s*\\n?",
+      "replace": "",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1
+    },
+    "class_type": "RegexReplace",
+    "_meta": { "title": "앞 ``` 제거" }
+  },
+  "8": {
+    "inputs": {
+      "string": [ "7", 0 ],
+      "regex_pattern": "\\n?```\\s*$",
+      "replace": "",
+      "case_insensitive": false,
+      "multiline": false,
+      "dotall": false,
+      "count": 1
+    },
+    "class_type": "RegexReplace",
+    "_meta": { "title": "뒤 ``` 제거" }
+  },
+  "4": {
+    "inputs": {
+      "json_string": [ "8", 0 ],
+      "key": "prompt"
+    },
+    "class_type": "JsonExtractString",
+    "_meta": { "title": "JSON에서 prompt 추출 (= 물체 이름)" }
+  },
+  "30": {
+    "inputs": {
+      "value": "game icon, flat vector illustration, single centered object, clean simple shapes, soft cel shading, matte finish, pastel color palette, white background"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": { "title": "긍정 디자인 프롬프트 (TA 수정 칸)" }
+  },
+  "31": {
+    "inputs": {
+      "string_a": [ "30", 0 ],
+      "string_b": [ "4", 0 ],
+      "delimiter": ", "
+    },
+    "class_type": "StringConcatenate",
+    "_meta": { "title": "디자인 + 물체 합치기" }
+  },
+  "20": {
+    "inputs": {
+      "ckpt_name": "gameIconInstitute_v4XL.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": { "title": "SDXL 체크포인트 로드" }
+  },
+  "21": {
+    "inputs": {
+      "text": [ "31", 0 ],
+      "clip": [ "20", 1 ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "긍정 프롬프트 (Gemma 출력 자동연결)" }
+  },
+  "22": {
+    "inputs": {
+      "text": "glossy, shiny, specular highlights, mirror reflection, wet look, metallic, wrinkles, folds, creases, high saturation, neon colors, realistic, photo, scenery, floor, shadows, ground, multiple objects, text, character, person, body, face, head, wearing, table, mannequin, blurry, ugly, watermark, low quality",
+      "clip": [ "20", 1 ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "부정 프롬프트 (고정)" }
+  },
+  "23": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": { "title": "빈 잠재 이미지" }
+  },
+  "24": {
+    "inputs": {
+      "seed": 0,
+      "steps": 30,
+      "cfg": 7,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1,
+      "model": [ "20", 0 ],
+      "positive": [ "21", 0 ],
+      "negative": [ "22", 0 ],
+      "latent_image": [ "23", 0 ]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "KSampler" }
+  },
+  "25": {
+    "inputs": {
+      "samples": [ "24", 0 ],
+      "vae": [ "20", 2 ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE 디코드" }
+  },
+  "26": {
+    "inputs": {},
+    "class_type": "BRIA_RMBG_ModelLoader_Zho",
+    "_meta": { "title": "BRIA 모델 로더" }
+  },
+  "27": {
+    "inputs": {
+      "rmbgmodel": [ "26", 0 ],
+      "image": [ "25", 0 ]
+    },
+    "class_type": "BRIA_RMBG_Zho",
+    "_meta": { "title": "BRIA 누끼" }
+  },
+  "28": {
+    "inputs": {
+      "filename_prefix": "item",
+      "images": [ "27", 0 ]
+    },
+    "class_type": "SaveImage",
+    "_meta": { "title": "투명 PNG 저장" }
+  }
+}
