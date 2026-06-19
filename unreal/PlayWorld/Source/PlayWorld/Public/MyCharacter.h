@@ -7,8 +7,8 @@
 #include "MyCharacter.generated.h"
 
 class UBoxComponent;
-class UArrowComponent;
 class UCharacterEquipmentComponent;
+class USceneComponent;
 class UStaticMeshComponent;
 class UZoneDamageReceiverComponent;
 
@@ -30,6 +30,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void ResetForNextRound();
 
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	void SetAutoAttackEnabled(bool bEnabled);
+
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool IsAlive() const { return bIsAlive; }
 
@@ -48,6 +51,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void ApplyAttackRangeBonus(float BonusAmount);
 
+
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void ApplyAttackPowerBonus(float BonusAmount);
 
@@ -57,14 +61,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BattleRoyale")
 	void ApplyZoneDamage(float DamagePerSecond, float DeltaTime);
 
+	UFUNCTION(BlueprintCallable, Category = "Visual")
+	void SetOverlayColor(FLinearColor Color);
+
 	UCharacterEquipmentComponent* GetEquipmentComponent() const { return EquipmentComponent; }
 	UZoneDamageReceiverComponent* GetZoneDamageReceiverComponent() const { return ZoneDamageReceiverComponent; }
 
 protected:
 	virtual void BeginPlay() override;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visual")
-	TObjectPtr<UArrowComponent> ForwardArrow;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Visual")
 	TObjectPtr<UStaticMeshComponent> BodyMesh;
@@ -77,6 +81,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UBoxComponent> AttackBox;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
+	TObjectPtr<USceneComponent> WeaponPivot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UStaticMeshComponent> WeaponMesh;
@@ -102,8 +109,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float AttackBoxForwardOffset = 120.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Visual")
+	FVector WeaponMeshOffset = FVector(120.0f, 0.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Visual")
+	FRotator WeaponMeshRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Visual")
+	FVector WeaponMeshScale = FVector(1.0f, 0.12f, 0.12f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat", meta = (ClampMin = "0.01"))
-	float AttackActiveTime = 0.15f;
+	float AttackActiveTime = 0.35f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	float WeaponSwingStartYaw = -60.0f;
@@ -134,12 +150,16 @@ private:
 	float TimeUntilNextAttack = 0.0f;
 	float AttackActiveTimeRemaining = 0.0f;
 	float AttackActiveTimeTotal = 0.0f;
+	bool bAutoAttackEnabled = false;
+	float ActiveWeaponSwingStartYaw = 0.0f;
+	float ActiveWeaponSwingEndYaw = 0.0f;
 	float PreviousSwingYaw = 0.0f;
 	FVector2D CurrentMoveInput = FVector2D::ZeroVector;
 	TSet<TWeakObjectPtr<AMyCharacter>> HitTargetsThisAttack;
 
 	void ApplyCurrentMoveInput();
 	void UpdateAttackBoxTransform();
+	void ApplyWeaponMeshTransform(float SwingYaw);
 	AMyCharacter* FindNearestAttackTarget() const;
 	bool IsTargetInAttackDistance(const AMyCharacter* Target) const;
 	bool IsTargetInsideForwardArc(const AMyCharacter* Target, float AttackDistance) const;

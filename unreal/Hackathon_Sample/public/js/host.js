@@ -1,4 +1,4 @@
-﻿// Host Dashboard Application Logic
+// Host Dashboard Application Logic
 
 document.addEventListener('DOMContentLoaded', () => {
   const socket = io();
@@ -39,100 +39,69 @@ document.addEventListener('DOMContentLoaded', () => {
   const MOVE_SPEED = 0.8; // Speed coefficient for 2D arena movement
 
   // --- 1. QR Code & URL Generation ---
-  const currentHostname = window.location.hostname;
   let joinUrl = "";
   connectionUrlEl.innerHTML = `<span style="color: var(--color-mint-text); font-weight: 500;">🌐 Cloudflare 터널 연결 대기 중...</span>`;
 
-  let pollCount = 0;
-  const maxPolls = 15; // Max 15 seconds wait
+  const tunnelPollStartedAt = Date.now();
+
+  function setTunnelHelper(message, color = 'var(--color-mint-text)') {
+    const existingText = connectionUrlEl.parentNode.querySelector('.tunnel-helper-text');
+    if (existingText) {
+      existingText.remove();
+    }
+
+    const helperText = document.createElement('p');
+    helperText.className = 'tunnel-helper-text';
+    helperText.style.color = color;
+    helperText.style.fontSize = '0.85rem';
+    helperText.style.marginTop = '8px';
+    helperText.style.fontWeight = '600';
+    helperText.innerHTML = message;
+    connectionUrlEl.parentNode.appendChild(helperText);
+  }
+
+  function showTunnelWaiting(message = 'Cloudflare 터널 주소를 할당받는 중입니다...') {
+    const elapsedSeconds = Math.floor((Date.now() - tunnelPollStartedAt) / 1000);
+    connectionUrlEl.innerHTML = `<span style="color: var(--color-mint-text); font-weight: 500;">🌐 ${message} (${elapsedSeconds}s)</span>`;
+    setTunnelHelper('주소가 할당되면 QR 코드와 접속 주소가 자동으로 갱신됩니다.');
+    qrCodeImg.style.display = 'none';
+    qrPlaceholder.style.display = 'flex';
+  }
+
+  function showTunnelUrl(tunnelUrl) {
+    joinUrl = tunnelUrl;
+    connectionUrlEl.textContent = joinUrl;
+    setTunnelHelper('🌐 외부 인터넷 접속 터널 활성화 완료!<br>(3G/4G/5G/LTE 및 다른 와이파이 환경에서도 자유롭게 접속 가능)');
+
+    qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=900x900&data=${encodeURIComponent(joinUrl)}`;
+    qrCodeImg.onload = () => {
+      qrPlaceholder.style.display = 'none';
+      qrCodeImg.style.display = 'block';
+    };
+  }
 
   function fetchHostInfo() {
     fetch('/api/host-info')
       .then(res => res.json())
       .then(data => {
-        const serverLanIp = data.localIp;
-        const port = data.port;
         const tunnelUrl = data.tunnelUrl;
 
         if (tunnelUrl) {
-          // Tunnel is active! Update UI
-          joinUrl = tunnelUrl;
-          connectionUrlEl.textContent = joinUrl;
-
-          // Remove any existing helper text
-          const existingText = connectionUrlEl.parentNode.querySelector('.tunnel-helper-text');
-          if (existingText) {
-            existingText.remove();
-          }
-
-          const tunnelText = document.createElement('p');
-          tunnelText.className = 'tunnel-helper-text';
-          tunnelText.style.color = 'var(--color-mint-text)';
-          tunnelText.style.fontSize = '0.85rem';
-          tunnelText.style.marginTop = '8px';
-          tunnelText.style.fontWeight = '600';
-          tunnelText.innerHTML = `🌐 외부 인터넷 접속 터널 활성화 완료!<br>(3G/4G/5G/LTE 및 다른 와이파이 환경에서도 자유롭게 접속 가능)`;
-          connectionUrlEl.parentNode.appendChild(tunnelText);
-
-          // Draw QR code
-          qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
-          qrCodeImg.onload = () => {
-            qrPlaceholder.style.display = 'none';
-            qrCodeImg.style.display = 'block';
-          };
-        } else if (pollCount < maxPolls) {
-          // Tunnel not ready yet, retry in 1s
-          pollCount++;
-          setTimeout(fetchHostInfo, 1000);
-        } else {
-          // Timeout, fallback to LAN IP / localhost
-          const fallbackOrigin = (currentHostname === 'localhost' || currentHostname === '127.0.0.1')
-            ? `http://${serverLanIp}:${port}`
-            : window.location.origin;
-
-          joinUrl = fallbackOrigin;
-          connectionUrlEl.textContent = joinUrl;
-
-          const existingText = connectionUrlEl.parentNode.querySelector('.tunnel-helper-text');
-          if (existingText) {
-            existingText.remove();
-          }
-
-          const warningText = document.createElement('p');
-          warningText.className = 'tunnel-helper-text';
-          warningText.style.color = 'var(--color-peach-text)';
-          warningText.style.fontSize = '0.8rem';
-          warningText.style.marginTop = '8px';
-          warningText.style.fontWeight = '600';
-          warningText.innerHTML = `⚠️ 터널 연결 시간 초과: 모바일 기기 접속을 위해 스마트폰을 <b>동일한 Wi-Fi</b>에 연결해 주세요.<br>(또는 PC에서 <a href="${joinUrl}/host.html" style="color: var(--color-blue-text); text-decoration: underline;">이 링크</a>로 다시 접속하세요)`;
-          connectionUrlEl.parentNode.appendChild(warningText);
-
-          // Draw QR code with LAN IP
-          qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
-          qrCodeImg.onload = () => {
-            qrPlaceholder.style.display = 'none';
-            qrCodeImg.style.display = 'block';
-          };
+          showTunnelUrl(tunnelUrl);
+          return;
         }
+
+        showTunnelWaiting();
+        setTimeout(fetchHostInfo, 1000);
       })
       .catch(err => {
-        console.error('Failed to fetch host network info, falling back:', err);
-        if (pollCount < maxPolls) {
-          pollCount++;
-          setTimeout(fetchHostInfo, 1000);
-        } else {
-          // Fallback immediately on error after timeout
-          joinUrl = window.location.origin;
-          connectionUrlEl.textContent = joinUrl;
-          qrCodeImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(joinUrl)}`;
-          qrCodeImg.onload = () => {
-            qrPlaceholder.style.display = 'none';
-            qrCodeImg.style.display = 'block';
-          };
-        }
+        console.error('Failed to fetch host network info:', err);
+        showTunnelWaiting('Cloudflare 터널 상태 확인 재시도 중입니다...');
+        setTimeout(fetchHostInfo, 1000);
       });
   }
 
+  showTunnelWaiting();
   fetchHostInfo();
 
   // --- 2. Socket Connection Handlers ---
@@ -158,26 +127,26 @@ document.addEventListener('DOMContentLoaded', () => {
       gameStateBadge.style.color = 'var(--color-blue-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'none';
-      btnShop.disabled = false;
+      if (btnShop) btnShop.disabled = false;
       btnStart.disabled = false;
       stopGameLoop();
     } else if (data.gameState === 'Shop') {
       gameStateBadge.style.color = 'var(--color-mint-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'none';
-      btnShop.disabled = true;
+      if (btnShop) btnShop.disabled = true;
       btnStart.disabled = false;
       stopGameLoop();
     } else if (data.gameState === 'Playing') {
       gameStateBadge.style.color = 'var(--color-peach-text)';
       winnerBannerWrapper.style.display = 'none';
       arenaWrapper.style.display = 'block';
-      btnShop.disabled = true;
+      if (btnShop) btnShop.disabled = true;
       btnStart.disabled = true;
       startGameLoop(data.players || []);
     } else if (data.gameState === 'Result') {
       gameStateBadge.style.color = 'var(--color-coral-text)';
-      btnShop.disabled = true;
+      if (btnShop) btnShop.disabled = true;
       btnStart.disabled = true;
       arenaWrapper.style.display = 'none';
       stopGameLoop();
@@ -508,9 +477,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- 4. Controls Handlers ---
 
-  btnShop.addEventListener('click', () => {
-    socket.emit('adminStartShop');
-  });
+  if (btnShop) {
+    btnShop.addEventListener('click', () => {
+      socket.emit('adminStartShop');
+    });
+  }
 
   btnStart.addEventListener('click', () => {
     socket.emit('adminStartGame');

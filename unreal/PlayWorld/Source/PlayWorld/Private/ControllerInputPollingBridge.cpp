@@ -3,23 +3,38 @@
 #include "BattleRoyaleZoneCameraActor.h"
 #include "Engine/World.h"
 #include "MyCharacter.h"
+#include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	TSubclassOf<AMyCharacter> DefaultPlayerCharacterClass()
+	{
+		static ConstructorHelpers::FClassFinder<AMyCharacter> PlayerCharacterBP(TEXT("/Game/Level/BP_PlayerCharacter"));
+		TSubclassOf<AMyCharacter> CharacterClass = AMyCharacter::StaticClass();
+		if (PlayerCharacterBP.Succeeded())
+		{
+			CharacterClass = PlayerCharacterBP.Class;
+		}
+		return CharacterClass;
+	}
+}
 
 AControllerInputPollingBridge::AControllerInputPollingBridge()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	PlayerCharacterClass = AMyCharacter::StaticClass();
+	PlayerCharacterClass = DefaultPlayerCharacterClass();
 	ZoneCameraClass = ABattleRoyaleZoneCameraActor::StaticClass();
 }
 
 void AControllerInputPollingBridge::BeginPlay()
 {
 	Super::BeginPlay();
-
-
-	bShuttingDown = false;
-	InitializeDemoCharacters();
-
-
+	if (UWorld* World = GetWorld())
+	{
+		if (UControllerInputBridgeSubsystem* BridgeSubsystem = World->GetSubsystem<UControllerInputBridgeSubsystem>())
+		{
+			BridgeSubsystem->ConfigureAndStart(MakeBridgeSettings());
+		}
 	}
 }
 
@@ -45,6 +60,7 @@ FControllerInputBridgeSettings AControllerInputPollingBridge::MakeBridgeSettings
 	Settings.MaxDemoBots = MaxDemoBots;
 	Settings.PlayerSpawnSpacing = PlayerSpawnSpacing;
 	Settings.ServerBaseUrl = ServerBaseUrl;
+	Settings.bStartServerProcess = bStartServerProcess;
 	Settings.PollingInterval = PollingInterval;
 	Settings.bLogPollingDebug = bLogPollingDebug;
 	Settings.BotCount = BotCount;
@@ -59,5 +75,8 @@ FControllerInputBridgeSettings AControllerInputPollingBridge::MakeBridgeSettings
 	Settings.bAutoActivateZoneCamera = bAutoActivateZoneCamera;
 	Settings.StatusPollingInterval = StatusPollingInterval;
 	Settings.WorldStateSyncInterval = WorldStateSyncInterval;
+	Settings.BoundaryCenter = BoundaryCenter;
+	Settings.BoundaryRadius = BoundaryRadius;
+	Settings.BoundaryClampMargin = BoundaryClampMargin;
 	return Settings;
 }

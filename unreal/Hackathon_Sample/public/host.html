@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Showdown Live Host Dashboard</title>
+  <title>MIMI Live Host Dashboard</title>
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/host.css">
@@ -14,7 +14,7 @@
     <!-- Dashboard Header -->
     <header class="host-header">
       <div class="host-brand">
-        <h1 class="host-title">SHOWDOWN LIVE</h1>
+        <h1 class="host-title">MIMI LIVE</h1>
         <p class="host-subtitle">발표자 마스터 대시보드</p>
       </div>
 
@@ -56,7 +56,6 @@
         <div class="card control-card">
           <h3>마스터 컨트롤러</h3>
           <div class="admin-actions" style="display: flex; flex-direction: column; gap: 8px;">
-            <button id="btn-shop" class="btn btn-secondary">상점 개방 (Open Shop)</button>
             <button id="btn-start" class="btn btn-primary">게임 시작 (Start Game)</button>
             <button id="btn-reset" class="btn btn-accent">게임 초기화 (Reset Game)</button>
           </div>
@@ -72,16 +71,8 @@
           <h3>⚡ 실시간 관객 투표 현황 ⚡</h3>
           <div class="vote-stats-container" style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
             <div class="vote-stat-row" style="display: flex; align-items: center; justify-content: space-between;">
-              <span style="font-size: 0.9rem; color: var(--text-primary);">💚 힐존 생성</span>
-              <span id="vote-count-HealZone" style="font-weight: 700; color: var(--color-mint-text); font-size: 1rem;">0표</span>
-            </div>
-            <div class="vote-stat-row" style="display: flex; align-items: center; justify-content: space-between;">
               <span style="font-size: 0.9rem; color: var(--text-primary);">⚡ 스피드업</span>
               <span id="vote-count-SpeedUp" style="font-weight: 700; color: var(--color-blue-text); font-size: 1rem;">0표</span>
-            </div>
-            <div class="vote-stat-row" style="display: flex; align-items: center; justify-content: space-between;">
-              <span style="font-size: 0.9rem; color: var(--text-primary);">🔥 자기장 축소</span>
-              <span id="vote-count-ShrinkZone" style="font-weight: 700; color: var(--color-peach-text); font-size: 1rem;">0표</span>
             </div>
             <div class="vote-stat-row" style="display: flex; align-items: center; justify-content: space-between;">
               <span style="font-size: 0.9rem; color: var(--text-primary);">📦 보급 투하</span>
@@ -130,7 +121,7 @@
   </div>
 
   <!-- Socket.io & Logic scripts -->
-  <script src="/js/socket-compat.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
   <script src="/js/host.js"></script>
 </body>
 </html>

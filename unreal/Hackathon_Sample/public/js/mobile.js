@@ -1,4 +1,4 @@
-﻿// Mobile Client Application Logic
+// Mobile Client Application Logic
 
 // Global debug logger directly on mobile UI for presentation testing
 window.onerror = function(msg, url, line, col, error) {
@@ -42,6 +42,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const screenResult = document.getElementById('screen-result');
   const nicknameInput = document.getElementById('nickname-input');
   const btnJoin = document.getElementById('btn-join');
+
+  let selectedColor = '#ff4d4d';
+  const characterColorInput = document.getElementById('character-color-input');
+  const characterColorPreview = document.getElementById('character-color-preview');
+  const characterColorValue = document.getElementById('character-color-value');
+
+  function syncCharacterColor(hexColor) {
+    selectedColor = /^#[0-9a-f]{6}$/i.test(hexColor) ? hexColor : '#ff4d4d';
+    if (characterColorPreview) characterColorPreview.style.backgroundColor = selectedColor;
+    if (characterColorValue) characterColorValue.textContent = selectedColor.toUpperCase();
+  }
+
+  if (characterColorInput) {
+    syncCharacterColor(characterColorInput.value);
+    characterColorInput.addEventListener('input', () => syncCharacterColor(characterColorInput.value));
+  }
+
   const playerChips = document.getElementById('player-chips');
   const playerCountEl = document.getElementById('player-count');
   
@@ -52,7 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const joystickTrack = document.getElementById('joystick-track');
   const joystickKnob = document.getElementById('joystick-knob');
   const joystickDebug = document.getElementById('joystick-debug');
-  const btnJump = document.getElementById('btn-jump');
   const btnEmote = document.getElementById('btn-emote');
   const spectatorPanel = document.getElementById('spectator-panel');
   
@@ -76,7 +92,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let joystickInstance = null;
   let inputInterval = null;
   let lastSentVector = { x: 0, y: 0 };
-  let jumpSeq = 0;
   let emoteSeq = 0;
   let playerPositions = {};
   let currentPlayersList = [];
@@ -85,7 +100,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function syncActionButtons() {
     const disabled = myState !== 'Alive' || currentGameState !== 'Playing';
-    if (btnJump) btnJump.disabled = disabled;
     if (btnEmote) btnEmote.disabled = disabled;
   }
   // --- 1. Premium Visual Effects ---
@@ -487,8 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
           onRelease: () => {
             joystickDebug.textContent = 'X: 0.00, Y: 0.00';
             lastSentVector = { x: 0, y: 0 };
-    jumpSeq = 0;
-    emoteSeq = 0;
+            emoteSeq = 0;
             sendInputToServer(0, 0); // instantly send zero
           }
         });
@@ -591,6 +604,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const cy = height / 2;
     // maxRadius is calculated based on the smaller dimension to prevent drawings stretching off-screen vertically
     const maxRadius = Math.min(width, height) / 2 - 10;
+    if (!Number.isFinite(maxRadius) || maxRadius <= 0) {
+      minimapCtx.clearRect(0, 0, width, height);
+      return;
+    }
 
     // Clear previous frame
     minimapCtx.clearRect(0, 0, width, height);
@@ -722,7 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnJoin.disabled = true;
     btnJoin.textContent = '입장 중...';
 
-    socket.emit('join', { nickname }, (response) => {
+    socket.emit('join', { nickname, color: selectedColor }, (response) => {
       btnJoin.disabled = false;
       btnJoin.textContent = '입장하기';
 
@@ -793,14 +810,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  if (btnJump) {
-    btnJump.addEventListener('click', () => {
-      if (myState !== 'Alive' || currentGameState !== 'Playing') return;
-      jumpSeq += 1;
-      sendInputToServer(lastSentVector.x, lastSentVector.y);
-    });
-  }
-
   if (btnEmote) {
     btnEmote.addEventListener('click', () => {
       if (myState !== 'Alive' || currentGameState !== 'Playing') return;
@@ -833,12 +842,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     joystickInstance = null; // reset instance so it can recreate next game
     lastSentVector = { x: 0, y: 0 };
-    jumpSeq = 0;
     emoteSeq = 0;
   }
 
   function sendInputToServer(x, y) {
-    socket.emit('moveInput', { moveX: x, moveY: y, jumpSeq, emoteSeq });
+    socket.emit('moveInput', { moveX: x, moveY: y, emoteSeq });
   }
 });
 

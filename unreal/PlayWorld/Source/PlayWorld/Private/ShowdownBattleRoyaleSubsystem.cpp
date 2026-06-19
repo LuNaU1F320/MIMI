@@ -145,12 +145,15 @@ void UShowdownBattleRoyaleSubsystem::StartBattleRoyale()
 	DestroyRuntimeVisuals();
 	CreateOrUpdateZoneVisualizers();
 	CreateMinimapWidget();
+	SetAutoAttackForRegisteredCharacters(true);
 
 	UE_LOG(LogTemp, Log, TEXT("Showdown battle royale started (Warmup 15 seconds, first safe zone visible)."));
 }
 
 void UShowdownBattleRoyaleSubsystem::ResetBattleRoyale()
 {
+	SetAutoAttackForRegisteredCharacters(false);
+
 	if (!bBattleRoyaleActive && !CurrentZoneVisualizer && !NextZoneVisualizer && !MinimapWidget && ActiveSupplies.Num() == 0)
 	{
 		return;
@@ -172,6 +175,7 @@ void UShowdownBattleRoyaleSubsystem::RegisterPlayerCharacter(const FString& Play
 	if (!PlayerId.IsEmpty() && Character)
 	{
 		PlayerCharactersById.Add(PlayerId, Character);
+		Character->SetAutoAttackEnabled(bBattleRoyaleActive && !bBattleRoyaleCompleted);
 	}
 }
 
@@ -180,6 +184,26 @@ void UShowdownBattleRoyaleSubsystem::RegisterBotCharacter(const FString& BotId, 
 	if (!BotId.IsEmpty() && Character)
 	{
 		BotCharactersById.Add(BotId, Character);
+		Character->SetAutoAttackEnabled(bBattleRoyaleActive && !bBattleRoyaleCompleted);
+	}
+}
+
+void UShowdownBattleRoyaleSubsystem::SetAutoAttackForRegisteredCharacters(bool bEnabled)
+{
+	for (const TPair<FString, TWeakObjectPtr<AMyCharacter>>& PlayerPair : PlayerCharactersById)
+	{
+		if (AMyCharacter* Character = PlayerPair.Value.Get())
+		{
+			Character->SetAutoAttackEnabled(bEnabled);
+		}
+	}
+
+	for (const TPair<FString, TWeakObjectPtr<AMyCharacter>>& BotPair : BotCharactersById)
+	{
+		if (AMyCharacter* Character = BotPair.Value.Get())
+		{
+			Character->SetAutoAttackEnabled(bEnabled);
+		}
 	}
 }
 

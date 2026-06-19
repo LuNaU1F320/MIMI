@@ -38,6 +38,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
 	FString ServerBaseUrl = TEXT("http://localhost:3000");
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
+	bool bStartServerProcess = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "0.05"))
 	float PollingInterval = 0.1f;
 
@@ -79,6 +82,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sync", meta = (ClampMin = "0.05"))
 	float WorldStateSyncInterval = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Boundary")
+	FVector BoundaryCenter = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Boundary", meta = (ClampMin = "100.0"))
+	float BoundaryRadius = 3000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Boundary", meta = (ClampMin = "0.0"))
+	float BoundaryClampMargin = 0.0f;
 
 private:
 	FControllerInputBridgeSettings MakeBridgeSettings() const;

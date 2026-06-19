@@ -8,16 +8,74 @@
 #include "Json.h"
 #include "WebSocketsModule.h"
 #include "MyCharacter.h"
+#include "Components/CapsuleComponent.h"
+#include "CollisionQueryParams.h"
 #include "Misc/DateTime.h"
 #include "Misc/Paths.h"
 #include "ShowdownBattleRoyaleSubsystem.h"
+#include "UObject/ConstructorHelpers.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
+namespace
+{
+	TSubclassOf<AMyCharacter> DefaultPlayerCharacterClass()
+	{
+		static ConstructorHelpers::FClassFinder<AMyCharacter> PlayerCharacterBP(TEXT("/Game/Level/BP_PlayerCharacter"));
+		TSubclassOf<AMyCharacter> CharacterClass = AMyCharacter::StaticClass();
+		if (PlayerCharacterBP.Succeeded())
+		{
+			CharacterClass = PlayerCharacterBP.Class;
+		}
+		return CharacterClass;
+	}
+
+	void AddServerDirCandidate(TArray<FString>& CandidateDirs, const FString& Directory)
+	{
+		FString FullPath = FPaths::ConvertRelativePathToFull(Directory);
+		FPaths::NormalizeDirectoryName(FullPath);
+		CandidateDirs.AddUnique(FullPath);
+	}
+
+	bool TryResolveSampleServerDir(FString& OutServerDir, FString& OutSearchedDirs)
+	{
+		TArray<FString> CandidateDirs;
+		AddServerDirCandidate(CandidateDirs, FPaths::ProjectDir() / TEXT("../Hackathon_Sample"));
+		AddServerDirCandidate(CandidateDirs, FPaths::ProjectDir() / TEXT("Hackathon_Sample"));
+		AddServerDirCandidate(CandidateDirs, FPaths::ProjectDir() / TEXT("../../Hackathon_Sample"));
+		AddServerDirCandidate(CandidateDirs, FPaths::LaunchDir() / TEXT("Hackathon_Sample"));
+		AddServerDirCandidate(CandidateDirs, FPaths::LaunchDir() / TEXT("../Hackathon_Sample"));
+		const FString ExecutableDir = FString(FPlatformProcess::BaseDir());
+		AddServerDirCandidate(CandidateDirs, ExecutableDir / TEXT("Hackathon_Sample"));
+		AddServerDirCandidate(CandidateDirs, ExecutableDir / TEXT("../Hackathon_Sample"));
+		AddServerDirCandidate(CandidateDirs, ExecutableDir / TEXT("../../Hackathon_Sample"));
+		AddServerDirCandidate(CandidateDirs, ExecutableDir / TEXT("../../../Hackathon_Sample"));
+
+		OutSearchedDirs.Empty();
+		for (const FString& CandidateDir : CandidateDirs)
+		{
+			if (!OutSearchedDirs.IsEmpty())
+			{
+				OutSearchedDirs += TEXT(", ");
+			}
+			OutSearchedDirs += CandidateDir;
+
+			const FString ServerScript = CandidateDir / TEXT("server.js");
+			if (FPaths::FileExists(ServerScript))
+			{
+				OutServerDir = CandidateDir;
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
 UControllerInputBridgeSubsystem::UControllerInputBridgeSubsystem()
 {
-	PlayerCharacterClass = AMyCharacter::StaticClass();
+	PlayerCharacterClass = DefaultPlayerCharacterClass();
 	ZoneCameraClass = ABattleRoyaleZoneCameraActor::StaticClass();
 }
 
@@ -33,8 +91,10 @@ void UControllerInputBridgeSubsystem::ConfigureAndStart(const FControllerInputBr
 	bIsStopping = false;
 	ApplySettings(InSettings);
 
-	// Start Node.js Server Process
-	StartServerProcess();
+	if (bStartServerProcess)
+	{
+		StartServerProcess();
+	}
 
 	InitializeDemoCharacters();
 
@@ -98,9 +158,9 @@ void UControllerInputBridgeSubsystem::StopBridge()
 void UControllerInputBridgeSubsystem::ApplySettings(const FControllerInputBridgeSettings& InSettings)
 {
 	PlayerCharacterClass = InSettings.PlayerCharacterClass;
-	if (!PlayerCharacterClass)
+	if (!PlayerCharacterClass || PlayerCharacterClass == AMyCharacter::StaticClass())
 	{
-		PlayerCharacterClass = AMyCharacter::StaticClass();
+		PlayerCharacterClass = DefaultPlayerCharacterClass();
 	}
 	ControlledCharacter = InSettings.ControlledCharacter;
 	MaxDemoPlayers = FMath::Clamp(InSettings.MaxDemoPlayers, 1, 4);
@@ -131,7 +191,7 @@ void UControllerInputBridgeSubsystem::InitializeDemoCharacters()
 {
 	if (!PlayerCharacterClass)
 	{
-		PlayerCharacterClass = AMyCharacter::StaticClass();
+		PlayerCharacterClass = DefaultPlayerCharacterClass();
 	}
 
 	if (!ControlledCharacter)
@@ -293,6 +353,26 @@ void UControllerInputBridgeSubsystem::HandleStatusResponse(FHttpRequestPtr Reque
 					PlayerObject->TryGetNumberField(TEXT("posX"), PosX);
 					PlayerObject->TryGetNumberField(TEXT("posY"), PosY);
 					PlayerInitialPercentageMap.FindOrAdd(PlayerId) = FVector2D(PosX, PosY);
+
+					AMyCharacter* Character = nullptr;
+					if (TObjectPtr<AMyCharacter>* FoundChar = PlayerCharactersById.Find(PlayerId))
+					{
+						Character = FoundChar->Get();
+					}
+					else if (TObjectPtr<AMyCharacter>* FoundBot = BotCharactersById.Find(PlayerId))
+					{
+						Character = FoundBot->Get();
+					}
+
+					if (Character)
+					{
+						FString ColorHex;
+						if (PlayerObject->TryGetStringField(TEXT("color"), ColorHex))
+						{
+							FLinearColor ColorVal = FLinearColor(FColor::FromHex(ColorHex));
+							Character->SetOverlayColor(ColorVal);
+						}
+					}
 				}
 			}
 		}
@@ -564,7 +644,36 @@ AMyCharacter* UControllerInputBridgeSubsystem::SpawnCharacterAt(const FVector& L
 	SpawnParams.Name = MakeUniqueObjectName(World, PlayerCharacterClass, FName(NamePrefix));
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 
-	return World->SpawnActor<AMyCharacter>(PlayerCharacterClass, Location, Rotation, SpawnParams);
+	return World->SpawnActor<AMyCharacter>(PlayerCharacterClass, ResolveCharacterSpawnLocation(Location), Rotation, SpawnParams);
+}
+
+FVector UControllerInputBridgeSubsystem::ResolveCharacterSpawnLocation(const FVector& Location) const
+{
+	UWorld* World = GetWorld();
+	if (!World || !PlayerCharacterClass)
+	{
+		return Location;
+	}
+
+	float CapsuleHalfHeight = 88.0f;
+	if (const AMyCharacter* DefaultCharacter = PlayerCharacterClass->GetDefaultObject<AMyCharacter>())
+	{
+		if (const UCapsuleComponent* Capsule = DefaultCharacter->GetCapsuleComponent())
+		{
+			CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+		}
+	}
+
+	FHitResult Hit;
+	const FVector TraceStart(Location.X, Location.Y, Location.Z + 5000.0f);
+	const FVector TraceEnd(Location.X, Location.Y, Location.Z - 5000.0f);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(MimiSpawnGroundTrace), false);
+	if (World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, QueryParams))
+	{
+		return FVector(Location.X, Location.Y, Hit.Location.Z + CapsuleHalfHeight + 2.0f);
+	}
+
+	return FVector(Location.X, Location.Y, Location.Z + CapsuleHalfHeight + 2.0f);
 }
 
 AMyCharacter* UControllerInputBridgeSubsystem::GetOrCreatePlayerCharacter(const FString& PlayerId)
@@ -905,14 +1014,25 @@ void UControllerInputBridgeSubsystem::HandleWebSocketMessage(const FString& Mess
 							PlayerObject->TryGetNumberField(TEXT("posY"), PosY);
 							PlayerInitialPercentageMap.FindOrAdd(PlayerId) = FVector2D(PosX, PosY);
 
+							AMyCharacter* Character = nullptr;
 							// Spawn characters/bots if not already created when receiving status update
 							if (PlayerId.StartsWith(TEXT("bot_")))
 							{
-								GetOrCreateBotCharacter(PlayerId);
+								Character = GetOrCreateBotCharacter(PlayerId);
 							}
 							else
 							{
-								GetOrCreatePlayerCharacter(PlayerId);
+								Character = GetOrCreatePlayerCharacter(PlayerId);
+							}
+
+							if (Character)
+							{
+								FString ColorHex;
+								if (PlayerObject->TryGetStringField(TEXT("color"), ColorHex))
+								{
+									FLinearColor ColorVal = FLinearColor(FColor::FromHex(ColorHex));
+									Character->SetOverlayColor(ColorVal);
+								}
 							}
 						}
 					}
@@ -941,7 +1061,14 @@ void UControllerInputBridgeSubsystem::StartServerProcess()
 		return;
 	}
 
-	FString ServerDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Hackathon_Sample"));
+	FString SearchedDirs;
+	FString ServerDir;
+	if (!TryResolveSampleServerDir(ServerDir, SearchedDirs))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Subsystem] Failed to start Node.js server process. Could not find Hackathon_Sample/server.js. Searched: %s"), *SearchedDirs);
+		return;
+	}
+
 	FString ServerScript = ServerDir / TEXT("server.js");
 
 	FString Executable = TEXT("C:\\Program Files\\nodejs\\node.exe");
@@ -966,6 +1093,7 @@ void UControllerInputBridgeSubsystem::StartServerProcess()
 
 	if (ServerProcessHandle.IsValid())
 	{
+		ServerProcessId = ProcessId;
 		UE_LOG(LogTemp, Warning, TEXT("[Subsystem] Started Node.js server process (PID: %d)."), ProcessId);
 
 		// Open Host Dashboard Webpage
@@ -976,7 +1104,8 @@ void UControllerInputBridgeSubsystem::StartServerProcess()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Subsystem] Failed to start Node.js server process. Make sure Node.js is installed."));
+		ServerProcessId = 0;
+		UE_LOG(LogTemp, Error, TEXT("[Subsystem] Failed to start Node.js server process. Make sure Node.js is installed and server script exists: %s"), *ServerScript);
 	}
 }
 
@@ -988,6 +1117,7 @@ void UControllerInputBridgeSubsystem::StopServerProcess()
 		FPlatformProcess::TerminateProc(ServerProcessHandle);
 		FPlatformProcess::CloseProc(ServerProcessHandle);
 		ServerProcessHandle.Reset();
+		ServerProcessId = 0;
 	}
 }
 

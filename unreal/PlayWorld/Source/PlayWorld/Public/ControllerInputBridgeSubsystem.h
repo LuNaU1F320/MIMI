@@ -35,6 +35,9 @@ struct PLAYWORLD_API FControllerInputBridgeSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
 	FString ServerBaseUrl = TEXT("http://localhost:3000");
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo")
+	bool bStartServerProcess = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Demo", meta = (ClampMin = "0.05"))
 	float PollingInterval = 0.1f;
 
@@ -76,6 +79,15 @@ struct PLAYWORLD_API FControllerInputBridgeSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sync", meta = (ClampMin = "0.05"))
 	float WorldStateSyncInterval = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Boundary")
+	FVector BoundaryCenter = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Boundary", meta = (ClampMin = "100.0"))
+	float BoundaryRadius = 3000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleRoyale|Boundary", meta = (ClampMin = "0.0"))
+	float BoundaryClampMargin = 0.0f;
 };
 
 UCLASS()
@@ -102,6 +114,7 @@ private:
 	int32 MaxDemoBots = 20;
 	FVector2D PlayerSpawnSpacing = FVector2D(250.0f, 250.0f);
 	FString ServerBaseUrl = TEXT("http://localhost:3000");
+	bool bStartServerProcess = true;
 	float PollingInterval = 0.1f;
 	bool bLogPollingDebug = true;
 	int32 BotCount = 0;
@@ -122,6 +135,10 @@ private:
 	float StatusPollingInterval = 0.5f;
 	float WorldStateSyncInterval = 0.1f;
 
+	FVector BoundaryCenter = FVector::ZeroVector;
+	float BoundaryRadius = 3000.0f;
+	float BoundaryClampMargin = 0.0f;
+
 	FTimerHandle PollingTimerHandle;
 	FTimerHandle StatusPollingTimerHandle;
 	FTimerHandle WorldStateSyncTimerHandle;
@@ -131,6 +148,7 @@ private:
 	bool bWorldStateRequestInFlight = false;
 	bool bIsStopping = false;
 	FProcHandle ServerProcessHandle;
+	uint32 ServerProcessId = 0;
 	float LastDebugLogTime = -1000.0f;
 
 	UPROPERTY()
@@ -162,6 +180,7 @@ private:
 	bool ShouldPreserveWinnerControl(const AMyCharacter* Character) const;
 	AMyCharacter* FindExistingCharacter() const;
 	AMyCharacter* SpawnCharacterAt(const FVector& Location, const FRotator& Rotation, const TCHAR* NamePrefix) const;
+	FVector ResolveCharacterSpawnLocation(const FVector& Location) const;
 	AMyCharacter* GetOrCreatePlayerCharacter(const FString& PlayerId);
 	AMyCharacter* GetOrCreateBotCharacter(const FString& BotId);
 	FVector GetPlayerSpawnLocation(int32 PlayerIndex) const;
@@ -170,8 +189,15 @@ private:
 	bool IsFarEnoughFromExistingBots(const FVector& CandidateLocation, const TArray<FVector>& ExistingLocations) const;
 	UShowdownBattleRoyaleSubsystem* GetBattleRoyaleSubsystem() const;
 	void EnsureBattleRoyaleZoneCamera();
+
+	FVector ClampLocationToMapCircle(const FVector& Location, float Margin = 0.0f) const;
+	FVector GetBoundaryCenter() const;
+	float GetMapRadius() const;
+
 	void StartServerProcess();
 	void StopServerProcess();
+	bool TerminateServerProcessTree(uint32 ProcessId) const;
+	void StopStaleServerProcess(const FString& ServerDir) const;
 	void ConnectWebSocket();
 	void RetryConnectWebSocket();
 };

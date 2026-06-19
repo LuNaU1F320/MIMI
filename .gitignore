@@ -30,6 +30,10 @@ target/
 **/target/
 *.class
 
+# Local Java/Maven runtime tools
+tools/_downloads/
+tools/jdk-*/
+tools/apache-maven-*/
 
 # Logs
 *.log

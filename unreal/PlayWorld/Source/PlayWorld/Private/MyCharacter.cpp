@@ -3,11 +3,10 @@
 #include "MyCharacter.h"
 
 #include "Components/BoxComponent.h"
-#include "Components/ArrowComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -23,35 +22,27 @@ AMyCharacter::AMyCharacter()
 	PrimaryActorTick.bCanEverTick = true;
 
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 88.0f);
-	GetCapsuleComponent()->SetHiddenInGame(false);
+	GetCapsuleComponent()->SetHiddenInGame(true);
+	GetCapsuleComponent()->SetVisibility(false);
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
 
 	GetMesh()->SetVisibility(false);
 	GetMesh()->SetHiddenInGame(true);
 
-	ForwardArrow = CreateDefaultSubobject<UArrowComponent>(TEXT("ForwardArrow"));
-	ForwardArrow->SetupAttachment(GetRootComponent());
-	ForwardArrow->SetRelativeLocation(FVector(80.0f, 0.0f, 80.0f));
-	ForwardArrow->SetArrowSize(1.5f);
-	ForwardArrow->ArrowColor = FColor::Green;
-	ForwardArrow->SetHiddenInGame(false);
 
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
 	BodyMesh->SetupAttachment(GetRootComponent());
 	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	BodyMesh->SetRelativeScale3D(FVector(0.68f, 0.68f, 0.88f));
+	BodyMesh->SetHiddenInGame(false);
+	BodyMesh->SetVisibility(true);
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CapsuleMesh(TEXT("/Engine/EditorResources/S_TriggerCapsule.S_TriggerCapsule"));
-	if (CapsuleMesh.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (CylinderMesh.Succeeded())
 	{
-		BodyMesh->SetStaticMesh(CapsuleMesh.Object);
-	}
-	else
-	{
-		static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-		if (CylinderMesh.Succeeded())
-		{
-			BodyMesh->SetStaticMesh(CylinderMesh.Object);
-		}
+		BodyMesh->SetStaticMesh(CylinderMesh.Object);
 	}
 
 	AttackBox = CreateDefaultSubobject<UBoxComponent>(TEXT("AttackBox"));
@@ -64,16 +55,27 @@ AMyCharacter::AMyCharacter()
 	AttackBox->SetHiddenInGame(true);
 	AttackBox->SetVisibility(false);
 
-	WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
-	WeaponMesh->SetupAttachment(GetRootComponent());
-	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	WeaponMesh->SetHiddenInGame(true);
-	WeaponMesh->SetVisibility(false);
+	WeaponPivot = CreateDefaultSubobject<USceneComponent>(TEXT("WeaponPivot"));
+	WeaponPivot->SetupAttachment(GetRootComponent());
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeMesh.Succeeded())
+	WeaponMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMesh"));
+	WeaponMesh->SetupAttachment(WeaponPivot);
+	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WeaponMesh->SetHiddenInGame(false);
+	WeaponMesh->SetVisibility(true);
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SwordMesh(TEXT("/Game/Fab/Saber_sword/saber_sword/StaticMeshes/saber_sword.saber_sword"));
+	if (SwordMesh.Succeeded())
 	{
-		WeaponMesh->SetStaticMesh(CubeMesh.Object);
+		WeaponMesh->SetStaticMesh(SwordMesh.Object);
+	}
+	else
+	{
+		static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
+		if (CubeMesh.Succeeded())
+		{
+			WeaponMesh->SetStaticMesh(CubeMesh.Object);
+		}
 	}
 
 	EquipmentComponent = CreateDefaultSubobject<UCharacterEquipmentComponent>(TEXT("EquipmentComponent"));
@@ -91,10 +93,13 @@ void AMyCharacter::BeginPlay()
 
 	CurrentHP = FMath::Clamp(CurrentHP, 0.0f, MaxHP);
 	bIsAlive = CurrentHP > 0.0f;
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
 	ApplyExternalMovementSettings();
 	FinishAttack();
 
-	if (bIsAlive)
+	if (bAutoAttackEnabled && bIsAlive)
 	{
 		GetWorldTimerManager().SetTimer(AutoAttackTimerHandle, this, &AMyCharacter::TryAutoAttack, AutoAttackInterval, true);
 	}
@@ -235,7 +240,13 @@ void AMyCharacter::TakeAutoAttackDamage(float DamageAmount)
 	bIsAlive = false;
 	FinishAttack();
 	GetWorldTimerManager().ClearTimer(AutoAttackTimerHandle);
+	SetMoveInput(0.0f, 0.0f);
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->StopMovementImmediately();
+	}
 	SetActorEnableCollision(false);
+	SetActorHiddenInGame(true);
 	UE_LOG(LogTemp, Log, TEXT("%s died."), *GetName());
 }
 
@@ -243,6 +254,7 @@ void AMyCharacter::ResetForNextRound()
 {
 	CurrentHP = MaxHP;
 	bIsAlive = true;
+	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 	SetMoveInput(0.0f, 0.0f);
 	SetExternalMovementEnabled(true);
@@ -252,9 +264,25 @@ void AMyCharacter::ResetForNextRound()
 	if (GetWorld())
 	{
 		GetWorldTimerManager().ClearTimer(AutoAttackTimerHandle);
+		if (bAutoAttackEnabled && bIsAlive)
+		{
+			GetWorldTimerManager().SetTimer(AutoAttackTimerHandle, this, &AMyCharacter::TryAutoAttack, AutoAttackInterval, true);
+		}
+	}
+}
+
+void AMyCharacter::SetAutoAttackEnabled(bool bEnabled)
+{
+	bAutoAttackEnabled = bEnabled;
+	GetWorldTimerManager().ClearTimer(AutoAttackTimerHandle);
+	TimeUntilNextAttack = 0.0f;
+
+	if (bAutoAttackEnabled && bIsAlive)
+	{
 		GetWorldTimerManager().SetTimer(AutoAttackTimerHandle, this, &AMyCharacter::TryAutoAttack, AutoAttackInterval, true);
 	}
 }
+
 
 void AMyCharacter::UpdateAttackBoxTransform()
 {
@@ -269,8 +297,7 @@ void AMyCharacter::UpdateAttackBoxTransform()
 
 	if (WeaponMesh)
 	{
-		WeaponMesh->SetRelativeLocation(FVector(AttackBoxForwardOffset, 0.0f, 0.0f));
-		WeaponMesh->SetRelativeScale3D((AttackBoxExtent * 2.0f) / 100.0f);
+		ApplyWeaponMeshTransform(0.0f);
 	}
 }
 
@@ -370,6 +397,8 @@ void AMyCharacter::StartAttack()
 	UpdateAttackBoxTransform();
 	AttackActiveTimeRemaining = AttackActiveTime;
 	AttackActiveTimeTotal = AttackActiveTime;
+	ActiveWeaponSwingStartYaw = WeaponSwingStartYaw;
+	ActiveWeaponSwingEndYaw = WeaponSwingEndYaw;
 	PreviousSwingYaw = WeaponSwingStartYaw;
 	HitTargetsThisAttack.Reset();
 
@@ -377,15 +406,14 @@ void AMyCharacter::StartAttack()
 	{
 		WeaponMesh->SetHiddenInGame(false);
 		WeaponMesh->SetVisibility(true);
-		WeaponMesh->SetRelativeRotation(FRotator(0.0f, WeaponSwingStartYaw, 0.0f));
+		ApplyWeaponMeshTransform(WeaponSwingStartYaw);
 	}
 
-	AttackBox->SetHiddenInGame(false);
-	AttackBox->SetVisibility(true);
+	AttackBox->SetHiddenInGame(true);
+	AttackBox->SetVisibility(false);
 	AttackBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	AttackBox->UpdateOverlaps();
 
-	UE_LOG(LogTemp, Log, TEXT("%s attacks."), *GetName());
 	SweepSectorDamage(PreviousSwingYaw, PreviousSwingYaw);
 }
 
@@ -405,9 +433,9 @@ void AMyCharacter::FinishAttack()
 
 	if (WeaponMesh)
 	{
-		WeaponMesh->SetHiddenInGame(true);
-		WeaponMesh->SetVisibility(false);
-		WeaponMesh->SetRelativeRotation(FRotator::ZeroRotator);
+		WeaponMesh->SetHiddenInGame(false);
+		WeaponMesh->SetVisibility(true);
+		ApplyWeaponMeshTransform(0.0f);
 	}
 }
 
@@ -419,8 +447,8 @@ void AMyCharacter::UpdateWeaponSwing()
 	}
 
 	const float Alpha = 1.0f - FMath::Clamp(AttackActiveTimeRemaining / AttackActiveTimeTotal, 0.0f, 1.0f);
-	const float SwingYaw = FMath::Lerp(WeaponSwingStartYaw, WeaponSwingEndYaw, Alpha);
-	WeaponMesh->SetRelativeRotation(FRotator(0.0f, SwingYaw, 0.0f));
+	const float SwingYaw = FMath::Lerp(ActiveWeaponSwingStartYaw, ActiveWeaponSwingEndYaw, Alpha);
+	ApplyWeaponMeshTransform(SwingYaw);
 
 	if (AttackBox)
 	{
@@ -429,6 +457,22 @@ void AMyCharacter::UpdateWeaponSwing()
 
 	SweepSectorDamage(PreviousSwingYaw, SwingYaw);
 	PreviousSwingYaw = SwingYaw;
+}
+
+void AMyCharacter::ApplyWeaponMeshTransform(float SwingYaw)
+{
+	if (WeaponPivot)
+	{
+		WeaponPivot->SetRelativeLocation(WeaponMeshOffset);
+		WeaponPivot->SetRelativeRotation(FRotator(0.0f, SwingYaw, 0.0f));
+	}
+
+	if (WeaponMesh)
+	{
+		WeaponMesh->SetRelativeLocation(FVector::ZeroVector);
+		WeaponMesh->SetRelativeRotation(WeaponMeshRotation);
+		WeaponMesh->SetRelativeScale3D(WeaponMeshScale);
+	}
 }
 
 void AMyCharacter::SweepSectorDamage(float PreviousYaw, float CurrentYaw)
@@ -453,15 +497,6 @@ void AMyCharacter::SweepSectorDamage(float PreviousYaw, float CurrentYaw)
 		FCollisionObjectQueryParams(ECC_Pawn),
 		FCollisionShape::MakeSphere(AttackDistance),
 		QueryParams);
-
-	const FVector Forward = GetActorForwardVector();
-	const FVector LeftEdge = FRotator(0.0f, FMath::Min(PreviousYaw, CurrentYaw), 0.0f).RotateVector(Forward);
-	const FVector RightEdge = FRotator(0.0f, FMath::Max(PreviousYaw, CurrentYaw), 0.0f).RotateVector(Forward);
-	const FVector CurrentEdge = FRotator(0.0f, CurrentYaw, 0.0f).RotateVector(Forward);
-	DrawDebugLine(World, Origin, Origin + LeftEdge * AttackDistance, FColor::Yellow, false, 0.08f, 0, 2.0f);
-	DrawDebugLine(World, Origin, Origin + RightEdge * AttackDistance, FColor::Yellow, false, 0.08f, 0, 2.0f);
-	DrawDebugLine(World, Origin, Origin + CurrentEdge * AttackDistance, FColor::Red, false, 0.08f, 0, 3.0f);
-	DrawDebugSphere(World, Origin, AttackDistance, 24, FColor::Orange, false, 0.08f, 0, 1.0f);
 
 	if (!bHasOverlap)
 	{
@@ -541,4 +576,28 @@ void AMyCharacter::MoveForward(float Value)
 void AMyCharacter::MoveRight(float Value)
 {
 	SetMoveInput(Value, CurrentMoveInput.Y);
+}
+
+void AMyCharacter::SetOverlayColor(FLinearColor Color)
+{
+	if (BodyMesh)
+	{
+		int32 NumMaterials = BodyMesh->GetNumMaterials();
+		for (int32 i = 0; i < NumMaterials; ++i)
+		{
+			UMaterialInterface* BaseMaterial = BodyMesh->GetMaterial(i);
+			if (BaseMaterial)
+			{
+				UMaterialInstanceDynamic* DynMaterial = Cast<UMaterialInstanceDynamic>(BaseMaterial);
+				if (!DynMaterial)
+				{
+					DynMaterial = BodyMesh->CreateDynamicMaterialInstance(i, BaseMaterial);
+				}
+				if (DynMaterial)
+				{
+					DynMaterial->SetVectorParameterValue(TEXT("OverlayColor"), Color);
+				}
+			}
+		}
+	}
 }

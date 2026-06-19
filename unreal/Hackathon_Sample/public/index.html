@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -31,7 +31,15 @@
             <label for="nickname-input" class="input-label">닉네임 (최대 8자)</label>
             <input type="text" id="nickname-input" class="input-field" placeholder="닉네임을 입력하세요" maxlength="8" autocomplete="off">
           </div>
-          <button id="btn-join" class="btn btn-primary">입장하기</button>
+          <div class="input-group" style="margin-top: 15px;">
+            <label for="character-color-input" class="input-label">캐릭터 색상 선택</label>
+            <div class="free-color-picker">
+              <input type="color" id="character-color-input" class="character-color-input" value="#ff4d4d">
+              <span id="character-color-preview" class="character-color-preview" aria-hidden="true"></span>
+              <span id="character-color-value" class="character-color-value">#FF4D4D</span>
+            </div>
+          </div>
+          <button id="btn-join" class="btn btn-primary" style="margin-top: 20px;">입장하기</button>
         </div>
       </section>
 
@@ -116,7 +124,6 @@
             </div>
 
             <div class="action-buttons" id="action-buttons">
-              <button type="button" class="action-button jump" id="btn-jump">JUMP</button>
               <button type="button" class="action-button emote" id="btn-emote">EMOTE</button>
             </div>
           </div>
@@ -160,7 +167,7 @@
   </div>
 
   <!-- Socket.io & Logic scripts -->
-  <script src="/js/socket-compat.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
   <script src="/js/joystick.js"></script>
   <script src="/js/mobile.js"></script>
 </body>

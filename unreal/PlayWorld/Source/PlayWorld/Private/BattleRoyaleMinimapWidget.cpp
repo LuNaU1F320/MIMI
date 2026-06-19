@@ -77,6 +77,11 @@ int32 UBattleRoyaleMinimapWidget::NativePaint(
 	{
 		if (const AMyCharacter* Character = PlayerPair.Value.Get())
 		{
+			if (!Character->IsAlive())
+			{
+				continue;
+			}
+
 			const FVector Location = Character->GetActorLocation();
 			DrawPoint(FVector2D(Location.X, Location.Y), FLinearColor::Green, 4.0f);
 		}
@@ -86,6 +91,11 @@ int32 UBattleRoyaleMinimapWidget::NativePaint(
 	{
 		if (const AMyCharacter* Character = BotPair.Value.Get())
 		{
+			if (!Character->IsAlive())
+			{
+				continue;
+			}
+
 			const FVector Location = Character->GetActorLocation();
 			DrawPoint(FVector2D(Location.X, Location.Y), FLinearColor::Red, 3.0f);
 		}

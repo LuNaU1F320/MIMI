@@ -28,14 +28,27 @@ The Unreal demo can consume the existing sample server at `C:\workspace\Hackatho
 - Protocol surface: the sample HTTP endpoint `GET /api/unreal/inputs`, which represents controller movement input for the Unreal runtime.
 - Unreal entry point: place one `ControllerInputPollingBridge` bootstrap actor in the level, or spawn it from a Blueprint/test level.
 - Local test:
-  1. Run `npm start` in `C:\workspace\Hackathon_Sample\Hackathon_Sample`.
+  1. Run `npm start` in `C:\workspace\Hackathon_Sample\Hackathon_Sample`, or let the Unreal bridge start that Node server from PIE.
   2. Open `http://localhost:3000/host.html`.
   3. Start PlayWorld PIE with a `ControllerInputPollingBridge` bootstrap actor in the level.
-  4. Join from the sample mobile page and press Start Game in the host page.
+  4. Join from the mobile page and press Start Game in the host page.
 
 The bridge polls controller input every `0.1s`, maps up to `MaxDemoPlayers` non-bot sample server inputs to `AMyCharacter` instances, and maps up to `MaxDemoBots` sample server `bot_` inputs to moving Unreal bot characters. Web-created bots are randomly spawned inside `BotSpawnCenter +/- BotSpawnAreaExtent`, then receive the same `moveX` and `moveY` values reported by the sample server. `BotCount` is a local fallback and defaults to `0`; use the host page's bot controls for the demo. If the sample server is unavailable or returns no input, controlled demo characters are stopped.
 
 When the sample server enters `Result`, only the winner keeps sending controller input. The mobile winner view keeps the joystick area visible and replaces the minimap area with a victory message. Non-winners still move to the result screen. This reuses the existing `moveInput` and `inputsUpdated` messages and does not add protocol fields.
+
+Packaged builds stage the sample Node server beside the real packaged game executable, typically `PlayWorld/Binaries/Win64/Hackathon_Sample` under the package root. The top-level `PlayWorld.exe` is a launcher, so the server folder is not expected to appear beside that launcher. The bridge checks the editor project sibling path first, then packaged launch/executable-relative paths, and logs every searched path if the server script is missing. Node.js must still be installed on the machine running the build.
+
+## Local Demo: Circular Field Boundary
+
+The PlayWorld battle royale map uses `BattleRoyaleSettings.MapCenter` for battle royale zone logic, and `BoundaryCenter` for the runtime circular collision boundary. The visible map can keep the default `(3000, 3000)` extent, while `BoundaryRadius` defaults to `3000` so the runtime boundary matches the initial full map radius.
+
+- Affected domains: Unreal and the sample Node server.
+- Protocol surface: no new messages; existing player `posX` and `posY` percentages are constrained to the circular field.
+- Runtime behavior: `ControllerInputBridgeSubsystem` gives registered characters the circular movement boundary so outward input is removed at the edge while tangent movement remains possible. It also clamps registered player and bot locations back inside the circle every `0.05s` as a fallback if collision or spawn placement bypasses input filtering.
+- Editor configuration: select the `ControllerInputPollingBridge` actor and edit `BattleRoyale|Boundary > BoundaryCenter`, `BoundaryRadius`, and `BoundaryClampMargin`. The red debug circle shows the effective character-center clamp line, which subtracts the configured margin and the character capsule radius.
+- Spawn behavior: backend player preview positions, Unreal player spawns, bot spawns, and supply drops are generated or clamped inside the circle.
+- Local test: start PIE with one `ControllerInputPollingBridge`, join from the mobile page, spawn bots from the host page, and verify characters stop at the circular edge while host positions remain inside the round field.
 
 ## Runtime GameMode
 
@@ -53,6 +66,10 @@ The `ControllerInputPollingBridge` keeps level-editable demo settings in its Det
 - Start condition: sample host state becomes `Playing`.
 - Reset condition: sample host state leaves `Playing`.
 - Runtime systems: circular current/next safe-zone display, minimap widget, per-phase supply drop, zone damage, and stacked supply equipment effects.
+- Attack start behavior: newly joined or spawned characters do not auto-attack while the host room is waiting. `StartBattleRoyale()` enables auto-attack for registered players and bots only after the sample host state becomes `Playing`.
+- Death behavior: when an `AMyCharacter` reaches `0` HP, Unreal hides the character actor, removes it from the Unreal minimap, disables collision, stops movement, and keeps reporting `alive=false` in the existing `worldState` payload so the sample server can update ranking. `ResetForNextRound()` makes the same actor visible and controllable again.
+- Combat debug: attack sweep damage still uses the same overlap checks, but attack range debug lines/spheres and per-attack logs are not emitted.
+- Local test: start PIE with one `ControllerInputPollingBridge`, start the sample host game, let a player or bot reach `0` HP through zone or attack damage, and verify the character disappears in Unreal while the host/mobile UI shows the death state.
 
 ## Local Demo: Battle Royale Zone Camera
 

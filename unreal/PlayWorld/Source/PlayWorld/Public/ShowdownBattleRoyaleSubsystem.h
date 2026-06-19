@@ -60,6 +60,7 @@ public:
 	void ConfigureBattleRoyale(const FBattleRoyaleSettings& InSettings);
 	void StartBattleRoyale();
 	void ResetBattleRoyale();
+	void SetAutoAttackForRegisteredCharacters(bool bEnabled);
 
 	void RegisterPlayerCharacter(const FString& PlayerId, AMyCharacter* Character);
 	void RegisterBotCharacter(const FString& BotId, AMyCharacter* Character);

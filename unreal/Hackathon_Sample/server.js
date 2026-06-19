@@ -280,7 +280,7 @@ app.get('/api/status', (req, res) => {
 
 // Join game
 app.post('/api/join', (req, res) => {
-  const { nickname } = req.body;
+  const { nickname, color } = req.body;
   if (!nickname || nickname.trim() === '') {
     return res.status(400).json({ success: false, reason: 'Nickname is required' });
   }
@@ -292,6 +292,7 @@ app.post('/api/join', (req, res) => {
   players[playerId] = {
     playerId,
     nickname: nickname.trim().substring(0, 8),
+    color: color || '#ff4d4d',
     state: playerState,
     x: 0,
     y: 0,
@@ -650,13 +651,16 @@ app.post('/api/admin/reset', (req, res) => {
 app.post('/api/admin/add-bots', (req, res) => {
   const count = Number(req.body.count) || 5;
   const botNames = ['토끼', '호랑이', '사자', '곰', '여우', '늑대', '독수리', '부엉이', '람쥐', '거북이'];
+  const presetColors = ['#ff4d4d', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
 
   for (let i = 0; i < count; i++) {
     const playerId = 'bot_' + Math.random().toString(36).substr(2, 5);
     const randomName = botNames[Math.floor(Math.random() * botNames.length)] + Math.floor(Math.random() * 100);
+    const randomColor = presetColors[Math.floor(Math.random() * presetColors.length)];
     players[playerId] = {
       playerId,
       nickname: '[BOT] ' + randomName,
+      color: randomColor,
       state: (gameState === 'Lobby' || gameState === 'Shop') ? 'Joined' : 'Spectator',
       x: 0,
       y: 0,
@@ -715,7 +719,7 @@ io.on('connection', (socket) => {
   });
 
   // Client Join
-  socket.on('join', ({ nickname }, callback) => {
+  socket.on('join', ({ nickname, color }, callback) => {
     if (!nickname || nickname.trim() === '') {
       return callback && callback({ success: false, reason: 'Nickname is required' });
     }
@@ -726,6 +730,7 @@ io.on('connection', (socket) => {
     players[playerId] = {
       playerId,
       nickname: nickname.trim().substring(0, 8),
+      color: color || '#ff4d4d',
       state: playerState,
       x: 0,
       y: 0,
@@ -944,13 +949,16 @@ io.on('connection', (socket) => {
   socket.on('adminAddBots', ({ count }) => {
     const botCount = Number(count) || 5;
     const botNames = ['토끼', '호랑이', '사자', '곰', '여우', '늑대', '독수리', '부엉이', '람쥐', '거북이'];
+    const presetColors = ['#ff4d4d', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
 
     for (let i = 0; i < botCount; i++) {
       const playerId = 'bot_' + Math.random().toString(36).substr(2, 5);
       const randomName = botNames[Math.floor(Math.random() * botNames.length)] + Math.floor(Math.random() * 100);
+      const randomColor = presetColors[Math.floor(Math.random() * presetColors.length)];
       players[playerId] = {
         playerId,
         nickname: '[BOT] ' + randomName,
+        color: randomColor,
         state: (gameState === 'Lobby' || gameState === 'Shop') ? 'Joined' : 'Spectator',
       x: 0,
       y: 0,
