@@ -1,7 +1,7 @@
 @echo off
-title Showdown Live Spring Server
+title MIMI Spring Server
 echo ===================================================
-echo  Showdown Live Spring Server
+echo  MIMI Spring Server
 echo ===================================================
 echo.
 

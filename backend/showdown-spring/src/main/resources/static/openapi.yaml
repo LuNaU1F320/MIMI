@@ -1,9 +1,9 @@
 ﻿openapi: 3.0.3
 info:
-  title: Showdown Live Spring Backend API
+  title: MIMI Spring Backend API
   version: 1.0.0
   description: |
-    Showdown Live 시연용 Spring Boot 백엔드 API 명세입니다.
+    MIMI 시연용 Spring Boot 백엔드 API 명세입니다.
 
     REST API는 참가, 상점, 관리자 명령, Unreal fallback/debug, H2 DB 확인에 사용합니다.
 

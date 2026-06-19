@@ -290,7 +290,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         "playerId", player.playerId,
         "nickname", player.nickname,
         "color", player.color,
-        "state", player.state
+        "state", player.state,
+        "emoteSeq", player.emoteSeq
     ), requestId);
   }
 
@@ -310,7 +311,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         "playerId", player.playerId,
         "nickname", player.nickname,
         "color", player.color,
-        "state", player.state
+        "state", player.state,
+        "emoteSeq", player.emoteSeq
     ), requestId);
   }
 

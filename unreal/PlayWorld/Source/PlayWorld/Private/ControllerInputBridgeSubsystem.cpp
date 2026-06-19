@@ -93,7 +93,8 @@ void UControllerInputBridgeSubsystem::ConfigureAndStart(const FControllerInputBr
 
 	if (bStartServerProcess)
 	{
-		StartServerProcess();
+		UE_LOG(LogTemp, Warning, TEXT("[Subsystem] Ignoring bStartServerProcess=true. Use the Spring backend batch file instead of starting the bundled Node.js server from Unreal."));
+		bStartServerProcess = false;
 	}
 
 	InitializeDemoCharacters();
@@ -167,7 +168,9 @@ void UControllerInputBridgeSubsystem::ApplySettings(const FControllerInputBridge
 	MaxDemoBots = FMath::Max(0, InSettings.MaxDemoBots);
 	PlayerSpawnSpacing = InSettings.PlayerSpawnSpacing;
 	ServerBaseUrl = InSettings.ServerBaseUrl;
-	bStartServerProcess = InSettings.bStartServerProcess;
+	// The presentation flow uses the Spring backend on port 3000. Some merged maps/actors may still
+	// carry an old serialized value that asks Unreal to launch the bundled Node sample server.
+	bStartServerProcess = false;
 	PollingInterval = FMath::Max(0.05f, InSettings.PollingInterval);
 	bLogPollingDebug = InSettings.bLogPollingDebug;
 	BotCount = FMath::Max(0, InSettings.BotCount);
@@ -1146,6 +1149,12 @@ void UControllerInputBridgeSubsystem::HandleWebSocketMessage(const FString& Mess
 
 void UControllerInputBridgeSubsystem::StartServerProcess()
 {
+	if (!bStartServerProcess)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Subsystem] Node.js sample server autostart is disabled. Start the Spring backend with start-spring-tunnel.bat."));
+		return;
+	}
+
 	if (ServerProcessHandle.IsValid())
 	{
 		return;

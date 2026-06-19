@@ -150,6 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
           myColor = response.color || myColor;
           sessionStorage.setItem('showdown_color', myColor);
           myState = response.state;
+          emoteSeq = Number(response.emoteSeq) || emoteSeq;
         } else {
           // Session expired or server restarted
           clearSession();
@@ -548,7 +549,6 @@ document.addEventListener('DOMContentLoaded', () => {
           onRelease: () => {
             joystickDebug.textContent = 'X: 0.00, Y: 0.00';
             lastSentVector = { x: 0, y: 0 };
-            emoteSeq = 0;
             sendInputToServer(0, 0); // instantly send zero
           }
         });
@@ -925,6 +925,7 @@ document.addEventListener('DOMContentLoaded', () => {
         myNickname = response.nickname;
         myColor = response.color || myColor;
         myState = response.state;
+        emoteSeq = Number(response.emoteSeq) || emoteSeq;
 
         sessionStorage.setItem('showdown_playerId', myPlayerId);
         sessionStorage.setItem('showdown_nickname', myNickname);
@@ -937,6 +938,7 @@ document.addEventListener('DOMContentLoaded', () => {
           socket.emit('rejoin', { playerId: myPlayerId }, (res) => {
             if (res.success) {
               myState = res.state;
+              emoteSeq = Number(res.emoteSeq) || emoteSeq;
               updatePlayingScreen(res);
               startInputSending();
             }
@@ -1021,7 +1023,6 @@ document.addEventListener('DOMContentLoaded', () => {
       inputInterval = null;
     }
     lastSentVector = { x: 0, y: 0 };
-    emoteSeq = 0;
   }
 
   function forceZeroInput() {
