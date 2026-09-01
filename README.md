@@ -10,7 +10,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)
 ![Hackathon](https://img.shields.io/badge/Hackathon-2%20Nights%203%20Days-F9A825)
 
-[상세 포트폴리오](https://app.notion.com/p/3c3dbef4fbe580ef9666da5295424344) · [프로젝트 자료](https://drive.google.com/drive/folders/1v_6c-AecuchaAHTHRDPQTKgcLi-Pnd9d)
+[상세 포트폴리오](https://app.notion.com/p/3c3dbef4fbe580ef9666da5295424344)
 
 </div>
 
@@ -24,7 +24,7 @@ MIMI는 **Multi-Input Media Immersion**의 약자로, 별도 앱을 설치하지
 | --- | --- |
 | 개발 기간 | 2026.06.17 ~ 2026.06.19 |
 | 프로젝트 형태 | 2박 3일 팀 해커톤 |
-| 본인 담당 | 모바일 컨트롤러, 실시간 WebSocket 서버, Unreal 입력 브리지, Battle Royale Gameplay, Emote 연동 |
+| 본인 담당 | Unreal Battle Royale Gameplay, Host Dashboard 및 Mobile Web UI |
 | 개발 환경 | Unreal Engine 5.7, C++ / Blueprint, Node.js / JavaScript |
 | 플랫폼 | Windows, Mobile Web |
 | 핵심 데이터 흐름 | `moveInput` → `inputsUpdated` → Unreal Simulation → `worldState` |
@@ -35,9 +35,11 @@ MIMI는 **Multi-Input Media Immersion**의 약자로, 별도 앱을 설치하지
 
 | 영역 | 책임 |
 | --- | --- |
-| Mobile Web / Host | 참가, 조이스틱·Emote 입력, 게임 시작·리셋, 플레이어 상태 표시 |
-| Backend | 참가자와 방 상태 관리, 입력 브로드캐스트, Unreal 및 Web 상태 중계 |
-| Unreal PlayWorld | 캐릭터·봇 입력 적용, 전투와 안전지대, 보급품, HP·생존 상태의 권위 있는 계산 |
+| 본인 | Unreal Battle Royale Gameplay, Host Dashboard와 Mobile Web UI |
+| Backend 팀원 | Web과 Unreal 사이의 통신 및 상태 중계 |
+| Unreal 팀원 | Emote 시스템 |
+| AI 팀원 | AI 영역 |
+| TA 팀원 | Technical Art 영역 |
 | Shared Contract | 공통 메시지 이름, payload 구조, JSON Schema와 호환성 기준 |
 
 ## 실행 방법
@@ -234,8 +236,6 @@ MIMI/
 ## 링크
 
 - [상세 Notion 포트폴리오](https://app.notion.com/p/3c3dbef4fbe580ef9666da5295424344)
-- [프로젝트 자료](https://drive.google.com/drive/folders/1v_6c-AecuchaAHTHRDPQTKgcLi-Pnd9d)
-- [공유 에셋](https://drive.google.com/drive/folders/1TBHWYKSurPqa-FkY8F3ChzGslxr0llcC?ths=true)
 
 ---
 
